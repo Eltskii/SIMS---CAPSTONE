@@ -1,0 +1,292 @@
+# Chairperson Dashboard - Department-Specific View
+
+## Overview
+
+The Chairperson dashboard has been customized to show **department-specific data only**, ensuring Chairpersons see only the information relevant to their department. This provides focused management capabilities without overwhelming them with university-wide statistics.
+
+---
+
+## 🎯 What Chairpersons See
+
+### **1. Department Badge in Header**
+- Prominently displays the department name below the "Welcome to the Chairperson Panel" title
+- Orange gradient badge with department icon: 🏢 **[Department Name]**
+- Custom subtitle: "Manage your department efficiently"
+
+### **2. Department-Filtered Statistics**
+
+All stat cards show **department-specific counts only**:
+
+| Stat Card | What It Shows | Label |
+|-----------|---------------|-------|
+| **Students** | Students enrolled in courses within the Chairperson's department | "Dept. Students" |
+| **Subjects** | Subjects assigned to courses in their department | "Subjects" |
+| **Courses** | Courses belonging to their department | "Courses" |
+| **Instructors** | Instructors assigned to their department | "Instructors" |
+| **Department** | Always shows "1" (their own department) | "Department" |
+| **Enrollments** | New enrollments in their department's courses | "Enrollments" |
+
+### **3. Quick Actions**
+
+Chairpersons have access to department-specific quick actions:
+
+| Action | Description | Access |
+|--------|-------------|--------|
+| 🔵 **New Subject** | Create subjects for their department's courses | ✅ Enabled |
+| 🟡 **New Course** | Add courses to their department | ✅ Enabled |
+| 🔷 **New Schedule** | Create class schedules for their department | ✅ Enabled |
+| 🟢 **New User** | Create system user accounts | ❌ Disabled (Admin only) |
+
+### **4. Manage Links**
+
+Each stat card has a "Manage" link with appropriate access control:
+
+| Link | Chairperson Access |
+|------|-------------------|
+| **Manage Students** | ❌ Disabled (Registrar/Admin only) |
+| **Manage Subjects** | ✅ Enabled (Department-filtered) |
+| **Manage Courses** | ✅ Enabled (Department-filtered) |
+| **Manage Instructors** | ✅ Enabled (Department-filtered) |
+| **View Department** | ✅ Enabled (Shows own department) |
+| **Enrollment Reports** | ❌ Disabled (Registrar/Admin only) |
+
+---
+
+## 🔍 How Department Filtering Works
+
+### **SQL Query Filtering**
+
+The system uses the `department-filter.php` middleware to automatically filter data:
+
+```php
+// Chairperson-specific queries add department filter
+$departmentFilter = " AND c.DEPT_ID = {$deptId}";
+
+// Example: Count students in department only
+$sql = "SELECT COUNT(DISTINCT s.IDNO) AS cnt 
+        FROM tblstudent s 
+        JOIN course c ON s.COURSE_ID = c.COURSE_ID 
+        WHERE s.NewEnrollees = 0 {$departmentFilter}";
+```
+
+### **Helper Functions Used**
+
+From `/include/department-filter.php`:
+
+| Function | Purpose |
+|----------|---------|
+| `isChairperson()` | Check if current user is a Chairperson |
+| `getCurrentDepartmentId()` | Get the logged-in Chairperson's department ID |
+| `getCurrentDepartmentName()` | Get the department name for display |
+| `getDepartmentFilter($alias)` | Generate SQL WHERE clause for filtering |
+
+---
+
+## 📊 Dashboard Behavior by Role
+
+### **Administrator**
+- **Sees**: ALL university data (all departments, all students, all courses)
+- **Can Manage**: Everything (users, departments, courses, subjects, students, etc.)
+- **Department Badge**: Not shown
+- **Stat Labels**: Generic (e.g., "Students", "Departments")
+
+### **Registrar**
+- **Sees**: ALL university data
+- **Can Manage**: Students, enrollments, schedules, reports
+- **Department Badge**: Not shown
+- **Stat Labels**: Generic
+
+### **Chairperson**
+- **Sees**: ONLY their department's data
+- **Can Manage**: Department courses, subjects, instructors, schedules
+- **Department Badge**: ✅ Shown prominently
+- **Stat Labels**: Department-specific (e.g., "Dept. Students", "Department")
+
+---
+
+## 🧪 Testing the Chairperson Dashboard
+
+### **Prerequisites**
+1. Create a Chairperson user account
+2. Assign the account to a specific department (e.g., "College of Engineering")
+3. Ensure the department has courses, subjects, and instructors
+
+### **Test Steps**
+
+1. **Login as Chairperson**
+   - Navigate to: `http://localhost/SIMS/admin/index.php`
+   - Use Chairperson credentials
+
+2. **Verify Department Badge**
+   - ✅ Department name appears below "Welcome to the Chairperson Panel"
+   - ✅ Orange gradient badge with building icon
+
+3. **Check Statistics**
+   - ✅ "Dept. Students" count matches students in department courses
+   - ✅ "Subjects" count shows only department subjects
+   - ✅ "Courses" count shows only department courses
+   - ✅ "Instructors" count shows only department instructors
+   - ✅ "Department" shows "1" (singular label)
+   - ✅ "Enrollments" shows new enrollments in department courses
+
+4. **Test Quick Actions**
+   - ✅ "New Subject" button is enabled and clickable
+   - ✅ "New Course" button is enabled and clickable
+   - ✅ "New Schedule" button is enabled and clickable
+   - ❌ "New User" button is grayed out and disabled
+
+5. **Test Manage Links**
+   - ✅ "Manage Subjects" link is enabled
+   - ✅ "Manage Courses" link is enabled
+   - ✅ "Manage Instructors" link is enabled
+   - ✅ "View Department" link is enabled
+   - ❌ "Manage Students" link is grayed out
+   - ❌ "Enrollment Reports" link is grayed out
+
+6. **Verify Data Isolation**
+   - ✅ Navigate to "Manage Courses" → Should see only department courses
+   - ✅ Navigate to "Manage Subjects" → Should see only department subjects
+   - ✅ Navigate to "View Department" → Should see own department details
+
+---
+
+## 🔐 Security Considerations
+
+### **Session-Based Filtering**
+- Department ID is stored in `$_SESSION['DEPT_ID']` during login
+- Middleware functions check session data on every request
+- SQL queries are automatically filtered based on session department
+
+### **Access Control**
+- Chairpersons CANNOT access:
+  - Student management (Registrar/Admin only)
+  - User account management (Admin only)
+  - Other departments' data
+  - University-wide reports
+
+### **Data Integrity**
+- All queries join on `course.DEPT_ID` to enforce filtering
+- Department filter is applied consistently across all modules
+- Prevents cross-department data leakage
+
+---
+
+## 🛠️ Implementation Files
+
+### **Modified Files**
+1. **`/admin/home.php`**
+   - Added `$isChairperson` check
+   - Split query logic: Chairperson vs. Admin/Registrar
+   - Added department badge display
+   - Updated stat labels for Chairpersons
+
+2. **`/include/department-filter.php`**
+   - Provides filtering helper functions
+   - Included globally via `initialize.php`
+
+3. **`/include/accounts.php`**
+   - Stores `DEPT_ID` in session on login
+
+### **Key Code Snippets**
+
+**Dashboard Logic (home.php lines 32-79)**
+```php
+$isChairperson = isChairperson();
+$departmentFilter = '';
+$departmentName = '';
+
+if ($isChairperson) {
+    $deptId = getCurrentDepartmentId();
+    if ($deptId) {
+        $departmentFilter = " AND c.DEPT_ID = $deptId";
+        $departmentName = getCurrentDepartmentName();
+    }
+}
+
+// Separate query logic for Chairperson vs. others
+if ($isChairperson) {
+    // Department-filtered queries...
+} else {
+    // University-wide queries...
+}
+```
+
+**Department Badge (home.php lines 512-518)**
+```php
+<?php if ($isChairperson && $departmentName): ?>
+    <div style="margin-top: 10px;">
+        <span style="background: linear-gradient(135deg, #f39c12, #e67e22); color: white; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; box-shadow: 0 3px 6px rgba(0,0,0,0.2);">
+            <i class="fa fa-building"></i> <?php echo htmlspecialchars($departmentName); ?>
+        </span>
+    </div>
+<?php endif; ?>
+```
+
+---
+
+## 📝 Next Steps (Phase 1B)
+
+After testing the Chairperson dashboard, the next phase includes:
+
+1. ✅ **Apply Department Filtering to Modules**
+   - Course module (`/admin/course/`)
+   - Subject module (`/admin/subject/`)
+   - Instructor module (`/admin/instructor/`)
+   - Schedule module (`/admin/schedule/`)
+
+2. ⏳ **Implement Instructor Portal** (Future)
+   - Create Instructor dashboard
+   - Show assigned subjects and students
+   - Grade entry interface
+   - Attendance tracking
+
+3. ⏳ **Testing and Validation**
+   - Create test Chairperson accounts for each department
+   - Verify data isolation between departments
+   - Test edge cases (e.g., Chairperson with no department assigned)
+
+---
+
+## 🐛 Troubleshooting
+
+### **Issue**: Department badge not showing
+**Solution**: 
+1. Verify `DEPT_ID` is set in session: `var_dump($_SESSION['DEPT_ID']);`
+2. Check `getCurrentDepartmentName()` returns valid department name
+3. Ensure user account has `DEPT_ID` column populated in `useraccounts` table
+
+### **Issue**: Seeing all students instead of department students
+**Solution**: 
+1. Verify `isChairperson()` returns `true`
+2. Check SQL query includes `$departmentFilter` in WHERE clause
+3. Debug: `echo $departmentFilter;` should output `" AND c.DEPT_ID = X"`
+
+### **Issue**: "Manage Subjects" link disabled
+**Solution**: 
+1. Verify `ACCOUNT_TYPE` is exactly "Chairperson" (case-sensitive)
+2. Check access control: `in_array($_SESSION['ACCOUNT_TYPE'], ['Chairperson', 'Administrator'])`
+3. Check JavaScript `checkAccess()` function in template
+
+---
+
+## 📚 Related Documentation
+
+- **`/ADMIN_IMPROVEMENT_PLAN.md`** - Full 3-phase improvement plan
+- **`/PHASE1A_IMPLEMENTATION.md`** - Detailed Phase 1A implementation guide
+- **`/DEPARTMENT_FILTER_EXAMPLE.md`** - Code examples for applying filters
+- **`/database_migrations/002_phase1_admin_improvements.sql`** - Database schema changes
+
+---
+
+## ✅ Summary
+
+The Chairperson dashboard now provides a **focused, department-specific view** that:
+
+- ✅ Shows only relevant department data
+- ✅ Displays department name badge prominently
+- ✅ Provides appropriate quick actions (no cross-department access)
+- ✅ Uses consistent filtering across all queries
+- ✅ Maintains security through session-based access control
+- ✅ Scales to support multiple departments with isolated data
+
+This implementation follows the principle of **least privilege** - Chairpersons see and manage only what they need for their department, improving usability and security.

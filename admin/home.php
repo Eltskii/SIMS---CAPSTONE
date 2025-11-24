@@ -1,0 +1,1142 @@
+<?php
+// safe helper to run a count query and return integer or '--'
+function safeCount($mydb, $sql) {
+    try {
+        $mydb->setQuery($sql);
+        $r = $mydb->loadSingleResult();
+        return ($r && isset($r->cnt)) ? intval($r->cnt) : '--';
+    } catch (Exception $e) {
+        error_log("safeCount failed for SQL: {$sql} -- " . $e->getMessage());
+        return '--';
+    }
+}
+
+// Default values for filtering
+$selected_course = isset($_GET['course']) ? intval($_GET['course']) : 0;
+$selected_year = isset($_GET['year']) ? intval($_GET['year']) : 0;
+$selected_semester_raw = isset($_GET['semester']) ? (string)$_GET['semester'] : '';
+
+// sanitize semester: only accept values that exist in $semesters (defensive)
+$selected_semester = '';
+if ($selected_semester_raw !== '') {
+    // compare as strings
+    foreach ($semesters as $s) {
+        if ((string)$s === $selected_semester_raw) {
+            $selected_semester = $selected_semester_raw;
+            break;
+        }
+    }
+}
+
+// Collect counts
+$counts = [
+    'students'     => safeCount($mydb, "SELECT COUNT(*) AS cnt FROM tblstudent WHERE NewEnrollees = 0"),
+    'subjects'     => safeCount($mydb, "SELECT COUNT(*) AS cnt FROM `subject` s JOIN `course` c ON s.COURSE_ID = c.COURSE_ID WHERE 1=1" .
+                                        ($selected_course > 0 ? " AND s.COURSE_ID = $selected_course" : '') .
+                                        ($selected_year > 0 ? " AND c.COURSE_LEVEL = $selected_year" : '') .
+                                        ($selected_semester ? " AND s.SEMESTER = '" . addslashes($selected_semester) . "'" : '')),
+    'courses'      => safeCount($mydb, "SELECT COUNT(*) AS cnt FROM `course`"),
+    'instructors'  => safeCount($mydb, "SELECT COUNT(*) AS cnt FROM tblinstructor"),
+    'departments'  => safeCount($mydb, "SELECT COUNT(*) AS cnt FROM department"),
+    'enrollments'  => safeCount($mydb, "SELECT COUNT(*) AS cnt FROM tblstudent s JOIN course c ON s.COURSE_ID = c.COURSE_ID WHERE s.NewEnrollees = 1")
+];
+
+// Determine user role for the header
+$accountType = isset($_SESSION['ACCOUNT_TYPE']) ? htmlspecialchars($_SESSION['ACCOUNT_TYPE']) : 'Admin';
+$isChairperson = ($accountType === 'Chairperson');
+$isInstructor = ($accountType === 'Instructor');
+
+// For chairpersons, get department-specific data
+if ($isChairperson) {
+    $deptId = function_exists('getCurrentDepartmentId') ? getCurrentDepartmentId() : null;
+    $departmentName = function_exists('getCurrentDepartmentName') ? getCurrentDepartmentName() : 'Your Department';
+    
+    if ($deptId) {
+        // Students by year level
+        $studentsByYear = [];
+        for ($level = 1; $level <= 4; $level++) {
+            $studentsByYear[$level] = safeCount($mydb, "
+                SELECT COUNT(DISTINCT s.IDNO) AS cnt 
+                FROM tblstudent s 
+                JOIN course c ON s.COURSE_ID = c.COURSE_ID 
+                WHERE c.DEPT_ID = $deptId AND s.YEARLEVEL = $level AND s.NewEnrollees = 0
+            ");
+        }
+        
+        // Override counts with department-filtered data
+        $counts = [
+            'students' => safeCount($mydb, "SELECT COUNT(DISTINCT s.IDNO) AS cnt FROM tblstudent s JOIN course c ON s.COURSE_ID = c.COURSE_ID WHERE c.DEPT_ID = $deptId AND s.NewEnrollees = 0"),
+            'courses' => safeCount($mydb, "SELECT COUNT(*) AS cnt FROM course WHERE DEPT_ID = $deptId"),
+            'subjects' => safeCount($mydb, "SELECT COUNT(*) AS cnt FROM subject s JOIN course c ON s.COURSE_ID = c.COURSE_ID WHERE c.DEPT_ID = $deptId"),
+            'instructors' => safeCount($mydb, "SELECT COUNT(*) AS cnt FROM tblinstructor WHERE DEPT_ID = $deptId")
+        ];
+    }
+}
+
+// For instructors, get teaching-specific data
+$instructorData = [];
+if ($isInstructor) {
+    // Get instructor ID from tblinstructor using ACCOUNT_ID
+    $mydb->setQuery("SELECT INST_ID, INST_NAME, DEPT_ID FROM tblinstructor WHERE ACCOUNT_ID = {$_SESSION['ACCOUNT_ID']} LIMIT 1");
+    $instructorInfo = $mydb->loadSingleResult();
+    
+    if ($instructorInfo) {
+        $instId = intval($instructorInfo->INST_ID);
+        $instructorData['name'] = $instructorInfo->INST_NAME;
+        $instructorData['dept_id'] = $instructorInfo->DEPT_ID;
+        
+        // Current semester and school year
+        $currentSem = isset($_SESSION['SEMESTER']) ? $_SESSION['SEMESTER'] : '';
+        $currentSY = isset($_SESSION['SY']) ? $_SESSION['SY'] : '';
+        
+        // Count total classes (unique schedules)
+        $instructorData['total_classes'] = safeCount($mydb, "
+            SELECT COUNT(DISTINCT schedID) AS cnt 
+            FROM tblschedule 
+            WHERE INST_ID = $instId
+            AND sched_semester = '" . addslashes($currentSem) . "'
+            AND sched_sy = '" . addslashes($currentSY) . "'
+        ");
+        
+        // Count unique subjects
+        $instructorData['total_subjects'] = safeCount($mydb, "
+            SELECT COUNT(DISTINCT SUBJ_ID) AS cnt 
+            FROM tblschedule 
+            WHERE INST_ID = $instId
+            AND sched_semester = '" . addslashes($currentSem) . "'
+            AND sched_sy = '" . addslashes($currentSY) . "'
+        ");
+        
+        // Count total students across all classes
+        $instructorData['total_students'] = safeCount($mydb, "
+            SELECT COUNT(DISTINCT ss.IDNO) AS cnt
+            FROM studentsubjects ss
+            JOIN tblschedule sch ON ss.SUBJ_ID = sch.SUBJ_ID
+            WHERE sch.INST_ID = $instId
+            AND sch.sched_semester = '" . addslashes($currentSem) . "'
+            AND sch.sched_sy = '" . addslashes($currentSY) . "'
+            AND ss.SEMESTER = '" . addslashes($currentSem) . "'
+            AND ss.SY = '" . addslashes($currentSY) . "'
+        ");
+        
+        // Calculate grading progress
+        $totalGradeSlots = safeCount($mydb, "
+            SELECT COUNT(DISTINCT CONCAT(ss.IDNO, '-', ss.SUBJ_ID)) AS cnt
+            FROM studentsubjects ss
+            JOIN tblschedule sch ON ss.SUBJ_ID = sch.SUBJ_ID
+            WHERE sch.INST_ID = $instId
+            AND sch.sched_semester = '" . addslashes($currentSem) . "'
+            AND sch.sched_sy = '" . addslashes($currentSY) . "'
+            AND ss.SEMESTER = '" . addslashes($currentSem) . "'
+            AND ss.SY = '" . addslashes($currentSY) . "'
+        ");
+        
+        $completedGrades = safeCount($mydb, "
+            SELECT COUNT(*) AS cnt
+            FROM tblgrades g
+            WHERE g.INST_ID = $instId
+            AND g.SEMESTER = '" . addslashes($currentSem) . "'
+            AND g.SCHOOLYEAR = '" . addslashes($currentSY) . "'
+            AND g.STATUS IN ('Approved', 'Published')
+        ");
+        
+        $instructorData['grade_progress'] = ($totalGradeSlots > 0) 
+            ? round(($completedGrades / $totalGradeSlots) * 100) 
+            : 0;
+        
+        // Get today's schedule
+        $dayOfWeek = date('l'); // Monday, Tuesday, etc.
+        $dayMapping = [
+            'Monday' => 'M',
+            'Tuesday' => 'T', 
+            'Wednesday' => 'W',
+            'Thursday' => 'TH',
+            'Friday' => 'F',
+            'Saturday' => 'S'
+        ];
+        $today = isset($dayMapping[$dayOfWeek]) ? $dayMapping[$dayOfWeek] : '';
+        
+        if ($today) {
+            $mydb->setQuery("
+                SELECT 
+                    sch.schedID,
+                    sch.sched_time,
+                    sch.sched_room,
+                    sch.SECTION,
+                    subj.SUBJ_CODE,
+                    subj.SUBJ_DESCRIPTION,
+                    c.COURSE_NAME,
+                    c.COURSE_LEVEL
+                FROM tblschedule sch
+                JOIN subject subj ON sch.SUBJ_ID = subj.SUBJ_ID
+                JOIN course c ON sch.COURSE_ID = c.COURSE_ID
+                WHERE sch.INST_ID = $instId
+                AND sch.sched_semester = '" . addslashes($currentSem) . "'
+                AND sch.sched_sy = '" . addslashes($currentSY) . "'
+                AND (sch.sched_day LIKE '%$today%' OR sch.sched_day = 'Daily')
+                ORDER BY sch.TIME_FROM
+            ");
+            $instructorData['today_schedule'] = $mydb->loadResultList();
+        } else {
+            $instructorData['today_schedule'] = [];
+        }
+        
+        // Get all classes with student counts
+        $mydb->setQuery("
+            SELECT 
+                sch.schedID,
+                sch.sched_time,
+                sch.sched_day,
+                sch.sched_room,
+                sch.SECTION,
+                subj.SUBJ_ID,
+                subj.SUBJ_CODE,
+                subj.SUBJ_DESCRIPTION,
+                c.COURSE_NAME,
+                c.COURSE_LEVEL,
+                c.COURSE_MAJOR,
+                COUNT(DISTINCT ss.IDNO) as student_count
+            FROM tblschedule sch
+            JOIN subject subj ON sch.SUBJ_ID = subj.SUBJ_ID
+            JOIN course c ON sch.COURSE_ID = c.COURSE_ID
+            LEFT JOIN studentsubjects ss ON sch.SUBJ_ID = ss.SUBJ_ID 
+                AND ss.SEMESTER = '" . addslashes($currentSem) . "'
+                AND ss.SY = '" . addslashes($currentSY) . "'
+            WHERE sch.INST_ID = $instId
+            AND sch.sched_semester = '" . addslashes($currentSem) . "'
+            AND sch.sched_sy = '" . addslashes($currentSY) . "'
+            GROUP BY sch.schedID
+            ORDER BY c.COURSE_NAME, subj.SUBJ_CODE, sch.SECTION
+        ");
+        $instructorData['all_classes'] = $mydb->loadResultList();
+        
+        // Get students for each class (organized by schedID)
+        $instructorData['class_students'] = [];
+        if (!empty($instructorData['all_classes'])) {
+            foreach ($instructorData['all_classes'] as $class) {
+                $mydb->setQuery("
+                    SELECT 
+                        st.IDNO,
+                        st.FNAME,
+                        st.LNAME,
+                        st.MNAME,
+                        st.STUDPHOTO
+                    FROM tblstudent st
+                    JOIN studentsubjects ss ON st.IDNO = ss.IDNO
+                    WHERE ss.SUBJ_ID = {$class->SUBJ_ID}
+                    AND ss.SEMESTER = '" . addslashes($currentSem) . "'
+                    AND ss.SY = '" . addslashes($currentSY) . "'
+                    ORDER BY st.LNAME, st.FNAME
+                ");
+                $instructorData['class_students'][$class->schedID] = $mydb->loadResultList() ?: [];
+            }
+        }
+        
+        // Get pending grade submissions (classes with missing or draft grades)
+        $mydb->setQuery("
+            SELECT DISTINCT
+                sch.schedID,
+                subj.SUBJ_ID,
+                subj.SUBJ_CODE,
+                subj.SUBJ_DESCRIPTION,
+                c.COURSE_NAME,
+                sch.SECTION,
+                COUNT(DISTINCT ss.IDNO) as total_students,
+                COUNT(DISTINCT CASE WHEN g.STATUS IN ('Approved', 'Published') THEN g.IDNO END) as graded_students
+            FROM tblschedule sch
+            JOIN subject subj ON sch.SUBJ_ID = subj.SUBJ_ID
+            JOIN course c ON sch.COURSE_ID = c.COURSE_ID
+            LEFT JOIN studentsubjects ss ON sch.SUBJ_ID = ss.SUBJ_ID
+                AND ss.SEMESTER = '" . addslashes($currentSem) . "'
+                AND ss.SY = '" . addslashes($currentSY) . "'
+            LEFT JOIN tblgrades g ON ss.IDNO = g.IDNO 
+                AND sch.SUBJ_ID = g.SUBJ_ID 
+                AND g.SEMESTER = '" . addslashes($currentSem) . "'
+                AND g.SCHOOLYEAR = '" . addslashes($currentSY) . "'
+            WHERE sch.INST_ID = $instId
+            AND sch.sched_semester = '" . addslashes($currentSem) . "'
+            AND sch.sched_sy = '" . addslashes($currentSY) . "'
+            GROUP BY sch.schedID
+            HAVING graded_students < total_students OR graded_students IS NULL
+            ORDER BY subj.SUBJ_CODE
+        ");
+        $instructorData['pending_grades'] = $mydb->loadResultList();
+    }
+}
+?>
+
+<style>
+/* ===== Enhanced Color Palette & Styling ===== */
+:root {
+  --primary-blue: #3498db;
+  --primary-blue-dark: #2980b9;
+  --success-green: #27ae60;
+  --success-green-dark: #219653;
+  --warning-orange: #f39c12;
+  --warning-orange-dark: #e67e22;
+  --info-teal: #1abc9c;
+  --info-teal-dark: #16a085;
+  --neutral-gray: #95a5a6;
+  --neutral-gray-dark: #7f8c8d;
+  --danger-red: #e74c3c;
+  --danger-red-dark: #c0392b;
+  --dark-slate: #2c3e50;
+  --dark-slate-light: #34495e;
+  --light-bg: #f8f9fa;
+  --radius: 12px;
+  --shadow: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+  --transition: all 0.3s ease;
+}
+
+.page-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, var(--dark-slate), var(--dark-slate-light));
+  padding: 25px 30px;
+  border-radius: var(--radius);
+  color: white;
+  box-shadow: var(--shadow);
+}
+
+.page-header-row .title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.dashboard-badge {
+  background: linear-gradient(135deg, var(--info-teal), var(--info-teal-dark));
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: 700;
+  margin-left: 12px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  font-size: 14px;
+}
+
+.dashboard-seal {
+  max-width: 80px;
+  height: auto;
+  display: block;
+  border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.3);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+/* Enhanced Stats Cards with Better Gradients */
+.admin-stats .panel {
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+    border: none;
+    transition: var(--transition);
+    overflow: hidden;
+}
+
+.admin-stats .panel:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+.admin-stats .panel .panel-body {
+    padding: 30px 20px;
+    text-align: center;
+    border-radius: var(--radius) var(--radius) 0 0;
+    color: white;
+    position: relative;
+    overflow: hidden;
+}
+
+.admin-stats .panel .panel-body::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -50%;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    opacity: 0.3;
+}
+
+.stat-icon {
+    font-size: 32px;
+    color: #fff;
+    width: 80px;
+    height: 80px;
+    line-height: 80px;
+    border-radius: 50%;
+    margin: 0 auto 20px;
+    background: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    backdrop-filter: blur(10px);
+    position: relative;
+    z-index: 2;
+}
+
+.stat-value {
+    font-size: 32px;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    position: relative;
+    z-index: 2;
+}
+
+.stat-label {
+    font-size: 15px;
+    color: rgba(255, 255, 255, 0.95);
+    margin-top: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    position: relative;
+    z-index: 2;
+}
+
+.panel-footer {
+    background: linear-gradient(135deg, #ffffff, #f8f9fa);
+    padding: 15px;
+    text-align: center;
+    border-top: 1px solid rgba(0,0,0,0.05);
+    border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.panel-footer a {
+    color: var(--dark-slate);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+    transition: var(--transition);
+    display: block;
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.8);
+    border: 1px solid rgba(0,0,0,0.05);
+}
+
+.panel-footer a:hover {
+    color: white;
+    background: var(--dark-slate);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+/* Enhanced Color Palette with Better Gradients */
+.panel-primary .panel-body { 
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.panel-green .panel-body { 
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+}
+.panel-yellow .panel-body { 
+    background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
+}
+.panel-info .panel-body { 
+    background: linear-gradient(135deg, #1a2980 0%, #26d0ce 100%);
+}
+.panel-default .panel-body { 
+    background: linear-gradient(135deg, #606c88 0%, #3f4c6b 100%);
+}
+.panel-danger .panel-body { 
+    background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%);
+}
+
+/* Enhanced Quick Actions */
+.quick-actions {
+    background: linear-gradient(135deg, #ffffff, #f8f9fa);
+    border: 1px solid #e9ecef;
+    border-radius: var(--radius);
+    margin-bottom: 25px;
+    box-shadow: var(--shadow);
+    padding: 20px;
+    border-left: 4px solid var(--info-teal);
+}
+
+.quick-actions .btn {
+    margin-right: 10px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    font-weight: 600;
+    border: none;
+    transition: var(--transition);
+    color: white;
+    padding: 10px 18px;
+    box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+}
+
+.quick-actions .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+    color: white;
+}
+
+.btn-primary { 
+    background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark));
+}
+.btn-warning { 
+    background: linear-gradient(135deg, var(--warning-orange), var(--warning-orange-dark));
+}
+.btn-info { 
+    background: linear-gradient(135deg, var(--info-teal), var(--info-teal-dark));
+}
+.btn-success { 
+    background: linear-gradient(135deg, var(--success-green), var(--success-green-dark));
+}
+
+/* Enhanced Documentation Panels */
+.how-card, .getting-started {
+    border-radius: var(--radius);
+    border: none;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    margin-bottom: 25px;
+}
+
+.how-card .panel-heading, .getting-started .panel-heading {
+    background: linear-gradient(135deg, var(--dark-slate), var(--dark-slate-light));
+    color: white;
+    border: none;
+    padding: 20px 25px;
+    font-weight: 700;
+    font-size: 18px;
+    position: relative;
+}
+
+.how-card .panel-heading::before, .getting-started .panel-heading::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--info-teal), var(--success-green));
+}
+
+.how-card .panel-body, .getting-started .panel-body {
+    padding: 30px;
+    background: #fff;
+    border-radius: 0 0 var(--radius) var(--radius);
+}
+
+/* Enhanced Panel Group */
+.panel-group .panel {
+    border-radius: var(--radius);
+    border: 1px solid #e9ecef;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    transition: var(--transition);
+}
+
+.panel-group .panel:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.panel-group .panel-heading {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    border-bottom: 1px solid #e9ecef;
+    border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.panel-group .panel-title a {
+    color: var(--dark-slate);
+    text-decoration: none;
+    font-weight: 600;
+    display: block;
+    padding: 15px 20px;
+    transition: var(--transition);
+}
+
+.panel-group .panel-title a:hover {
+    color: var(--primary-blue);
+    background: rgba(52, 152, 219, 0.05);
+}
+
+.panel-group .panel-body {
+    padding: 25px;
+    background: #fff;
+    border-radius: 0 0 var(--radius) var(--radius);
+    line-height: 1.7;
+}
+
+/* Role Badges in Documentation */
+.role-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    margin-left: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.badge-admin { background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark)); color: white; }
+.badge-registrar { background: linear-gradient(135deg, var(--success-green), var(--success-green-dark)); color: white; }
+.badge-chairperson { background: linear-gradient(135deg, var(--warning-orange), var(--warning-orange-dark)); color: white; }
+
+/* Feature List Styling */
+.feature-list {
+    list-style: none;
+    padding: 0;
+    margin: 15px 0;
+}
+
+.feature-list li {
+    padding: 8px 0;
+    border-bottom: 1px solid #f1f3f4;
+    display: flex;
+    align-items: center;
+}
+
+.feature-list li:last-child {
+    border-bottom: none;
+}
+
+.feature-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 12px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.icon-success { background: var(--success-green); color: white; }
+.icon-warning { background: var(--warning-orange); color: white; }
+.icon-danger { background: var(--danger-red); color: white; }
+.icon-info { background: var(--primary-blue); color: white; }
+
+/* Responsive Design */
+@media (max-width: 767px) {
+    .page-header-row {
+        flex-direction: column;
+        align-items: flex-start;
+        text-align: center;
+        padding: 20px;
+    }
+    .dashboard-seal {
+        margin-top: 15px;
+        align-self: center;
+    }
+    .stat-value {
+        font-size: 28px;
+    }
+    .stat-icon {
+        font-size: 28px;
+        width: 70px;
+        height: 70px;
+        line-height: 70px;
+    }
+    .quick-actions .btn {
+        display: block;
+        width: 100%;
+        margin-bottom: 10px;
+        margin-right: 0;
+    }
+    .how-card .panel-body, .getting-started .panel-body {
+        padding: 20px;
+    }
+}
+
+/* Disabled Link Styles */
+.disabled-link {
+    color: #6c757d !important;
+    cursor: not-allowed !important;
+    opacity: 0.5;
+    text-decoration: none;
+    pointer-events: none;
+}
+
+.disabled-link:hover {
+    color: #6c757d !important;
+    text-decoration: none;
+    background-color: transparent !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* Enhanced Code Styling */
+code {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    color: #e83e8c;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.9em;
+    border: 1px solid #e9ecef;
+    font-weight: 600;
+}
+
+/* Text Emphasis */
+.text-emphasis {
+    color: var(--dark-slate);
+    font-weight: 600;
+    border-left: 3px solid var(--info-teal);
+    padding-left: 12px;
+    margin: 15px 0;
+}
+</style>
+
+<!-- Enhanced Header -->
+<div class="row">
+    <div class="col-lg-12">
+        <div class="page-header-row">
+            <div>
+                <h2 class="title">
+                    Welcome to the <?php echo $accountType; ?> Panel
+                    <span class="dashboard-badge">Dashboard</span>
+                </h2>
+                <?php if ($isChairperson && isset($departmentName)): ?>
+                <p style="margin:8px 0 0 0; opacity:0.95; font-size:14px;">
+                    <span style="background: linear-gradient(135deg, #f39c12, #e67e22); padding: 6px 14px; border-radius: 20px; font-weight: 600; box-shadow: 0 3px 6px rgba(0,0,0,0.2);">
+                        <i class="fa fa-building"></i> <?php echo htmlspecialchars($departmentName); ?> Department
+                    </span>
+                </p>
+                <?php endif; ?>
+                <p style="margin:5px 0 0 0; opacity:0.9; font-size:15px;">
+                    <?php 
+                    if ($isInstructor) {
+                        echo 'View your teaching schedule, classes, and manage grades';
+                    } elseif ($isChairperson) {
+                        echo 'Manage your department efficiently';
+                    } else {
+                        echo 'Manage your university efficiently and effectively';
+                    }
+                    ?>
+                </p>
+            </div>
+            <div style="text-align:right;">
+                <img src="<?php echo web_root; ?>img/school_seal_100x100.jpg" alt="School Seal" class="dashboard-seal" loading="lazy">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enhanced Stats Cards -->
+<?php if ($isInstructor): ?>
+<!-- ===================================================================== -->
+<!-- INSTRUCTOR DASHBOARD -->
+<!-- ===================================================================== -->
+<?php include 'instructor_dashboard.php'; ?>
+
+<?php elseif ($isChairperson): ?>
+<!-- Chairperson: Department-focused 4-tile view -->
+<div class="row admin-stats">
+  <!-- Students with Year Level Breakdown -->
+  <div class="col-lg-3 col-md-6 col-sm-6 col-xs-12">
+    <div class="panel panel-primary">
+      <div class="panel-body">
+        <div class="stat-icon"><i class="fa fa-users"></i></div>
+        <div class="stat-value"><?php echo htmlspecialchars((string)$counts['students']); ?></div>
+        <p class="stat-label">Dept. Students</p>
+      </div>
+      <div class="panel-footer" style="padding: 10px; font-size: 12px; line-height: 1.6;">
+        <?php if (isset($studentsByYear)): ?>
+          <strong>By Year Level:</strong><br>
+          1st: <?php echo $studentsByYear[1]; ?> | 
+          2nd: <?php echo $studentsByYear[2]; ?><br>
+          3rd: <?php echo $studentsByYear[3]; ?> | 
+          4th: <?php echo $studentsByYear[4]; ?>
+        <?php else: ?>
+          Department Students
+        <?php endif; ?>
+      </div>
+    </div>
+  </div>
+
+  <!-- Courses -->
+  <div class="col-lg-3 col-md-6 col-sm-6 col-xs-12">
+    <div class="panel panel-yellow">
+      <div class="panel-body">
+        <div class="stat-icon"><i class="fa fa-graduation-cap"></i></div>
+        <div class="stat-value"><?php echo htmlspecialchars((string)$counts['courses']); ?></div>
+        <p class="stat-label">Dept. Courses</p>
+      </div>
+      <div class="panel-footer">
+        <a href="<?php echo web_root.'admin/course/index.php'; ?>">
+            Manage Courses
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Subjects -->
+  <div class="col-lg-3 col-md-6 col-sm-6 col-xs-12">
+    <div class="panel panel-green">
+      <div class="panel-body">
+        <div class="stat-icon"><i class="fa fa-book"></i></div>
+        <div class="stat-value"><?php echo htmlspecialchars((string)$counts['subjects']); ?></div>
+        <p class="stat-label">Dept. Subjects</p>
+      </div>
+      <div class="panel-footer">
+        <a href="<?php echo web_root.'admin/subject/index.php'; ?>">
+            Manage Subjects
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Faculty -->
+  <div class="col-lg-3 col-md-6 col-sm-6 col-xs-12">
+    <div class="panel panel-info">
+      <div class="panel-body">
+        <div class="stat-icon"><i class="fa fa-user"></i></div>
+        <div class="stat-value"><?php echo htmlspecialchars((string)$counts['instructors']); ?></div>
+        <p class="stat-label">Faculty</p>
+      </div>
+      <div class="panel-footer">
+        <a href="<?php echo web_root.'admin/instructor/index.php'; ?>">
+            Manage Instructors
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<?php else: ?>
+<!-- Registrar: Full 6-tile view -->
+<div class="row admin-stats">
+  <!-- Students -->
+  <div class="col-lg-2 col-md-4 col-sm-6 col-xs-12">
+    <div class="panel panel-primary">
+      <div class="panel-body">
+        <div class="stat-icon"><i class="fa fa-users"></i></div>
+        <div class="stat-value"><?php echo htmlspecialchars((string)$counts['students']); ?></div>
+        <p class="stat-label">Students</p>
+      </div>
+      <div class="panel-footer">
+        <a href="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar'])) ? web_root.'admin/student/index.php' : '#'; ?>" 
+           class="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar'])) ? '' : 'disabled-link'; ?>"
+           onclick="return checkAccess('<?php echo $_SESSION['ACCOUNT_TYPE']; ?>', ['Registrar'])">
+            Manage Students
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Subjects -->
+  <div class="col-lg-2 col-md-4 col-sm-6 col-xs-12">
+    <div class="panel panel-green">
+      <div class="panel-body">
+        <div class="stat-icon"><i class="fa fa-book"></i></div>
+        <div class="stat-value"><?php echo htmlspecialchars((string)$counts['subjects']); ?></div>
+        <p class="stat-label">Subjects</p>
+      </div>
+      <div class="panel-footer">
+        <a href="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar', 'Chairperson'])) ? web_root.'admin/subject/index.php' : '#'; ?>" 
+           class="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar', 'Chairperson'])) ? '' : 'disabled-link'; ?>"
+           onclick="return checkAccess('<?php echo $_SESSION['ACCOUNT_TYPE']; ?>', ['Registrar', 'Chairperson'])">
+            Manage Subjects
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Courses -->
+  <div class="col-lg-2 col-md-4 col-sm-6 col-xs-12">
+    <div class="panel panel-yellow">
+      <div class="panel-body">
+        <div class="stat-icon"><i class="fa fa-graduation-cap"></i></div>
+        <div class="stat-value"><?php echo htmlspecialchars((string)$counts['courses']); ?></div>
+        <p class="stat-label">Courses</p>
+      </div>
+      <div class="panel-footer">
+        <a href="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar', 'Chairperson'])) ? web_root.'admin/course/index.php' : '#'; ?>" 
+           class="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar', 'Chairperson'])) ? '' : 'disabled-link'; ?>"
+           onclick="return checkAccess('<?php echo $_SESSION['ACCOUNT_TYPE']; ?>', ['Registrar', 'Chairperson'])">
+            Manage Courses
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Instructors -->
+  <div class="col-lg-2 col-md-4 col-sm-6 col-xs-12">
+    <div class="panel panel-info">
+      <div class="panel-body">
+        <div class="stat-icon"><i class="fa fa-users"></i></div>
+        <div class="stat-value"><?php echo htmlspecialchars((string)$counts['instructors']); ?></div>
+        <p class="stat-label">Instructors</p>
+      </div>
+      <div class="panel-footer">
+        <a href="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar', 'Chairperson'])) ? web_root.'admin/instructor/index.php' : '#'; ?>" 
+           class="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar', 'Chairperson'])) ? '' : 'disabled-link'; ?>"
+           onclick="return checkAccess('<?php echo $_SESSION['ACCOUNT_TYPE']; ?>', ['Registrar', 'Chairperson'])">
+            Manage Instructors
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Departments -->
+  <div class="col-lg-2 col-md-4 col-sm-6 col-xs-12">
+    <div class="panel panel-default">
+      <div class="panel-body">
+        <div class="stat-icon"><i class="fa fa-building"></i></div>
+        <div class="stat-value"><?php echo htmlspecialchars((string)$counts['departments']); ?></div>
+        <p class="stat-label">Departments</p>
+      </div>
+      <div class="panel-footer">
+        <a href="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar', 'Chairperson'])) ? web_root.'admin/department/index.php' : '#'; ?>" 
+           class="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar', 'Chairperson'])) ? '' : 'disabled-link'; ?>"
+           onclick="return checkAccess('<?php echo $_SESSION['ACCOUNT_TYPE']; ?>', ['Registrar', 'Chairperson'])">
+            View Departments
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Enrollments -->
+  <div class="col-lg-2 col-md-4 col-sm-6 col-xs-12">
+    <div class="panel panel-danger">
+      <div class="panel-body">
+        <div class="stat-icon"><i class="fa fa-check-square"></i></div>
+        <div class="stat-value"><?php echo htmlspecialchars((string)$counts['enrollments']); ?></div>
+        <p class="stat-label">Enrollments</p>
+      </div>
+      <div class="panel-footer">
+        <a href="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar'])) ? web_root.'admin/report/index.php?view=perSemester' : '#'; ?>" 
+           class="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar'])) ? '' : 'disabled-link'; ?>"
+           onclick="return checkAccess('<?php echo $_SESSION['ACCOUNT_TYPE']; ?>', ['Registrar'])">
+            Enrollment Reports
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
+
+<!-- Enhanced Quick Actions (hidden for instructors) -->
+<?php if (!$isInstructor): ?>
+<div class="row" style="margin-bottom:30px;">
+  <div class="col-md-12">
+    <div class="quick-actions">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+        <div style="line-height:36px;">
+          <strong style="color:#2c3e50; font-size:16px;">🚀 Quick Actions:</strong>
+          <a class="btn btn-primary" href="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar', 'Chairperson'])) ? web_root.'admin/subject/index.php?view=add' : '#'; ?>" 
+             onclick="return checkAccess('<?php echo $_SESSION['ACCOUNT_TYPE']; ?>', ['Registrar', 'Chairperson'])">
+            <i class="fa fa-book"></i> New Subject
+          </a>
+          <a class="btn btn-warning" href="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar', 'Chairperson'])) ? web_root.'admin/course/index.php?view=add' : '#'; ?>" 
+             onclick="return checkAccess('<?php echo $_SESSION['ACCOUNT_TYPE']; ?>', ['Registrar', 'Chairperson'])">
+            <i class="fa fa-graduation-cap"></i> New Course
+          </a>
+          <a class="btn btn-info" href="<?php echo (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar', 'Chairperson'])) ? web_root.'admin/schedule/index.php?view=add' : '#'; ?>" 
+             onclick="return checkAccess('<?php echo $_SESSION['ACCOUNT_TYPE']; ?>', ['Registrar', 'Chairperson'])">
+            <i class="fa fa-calendar"></i> New Schedule
+          </a>
+          <a class="btn btn-success" href="<?php echo ($_SESSION['ACCOUNT_TYPE'] == 'Registrar') ? web_root.'admin/user/index.php?view=add' : '#'; ?>" 
+             onclick="return checkAccess('<?php echo $_SESSION['ACCOUNT_TYPE']; ?>', ['Registrar'])">
+            <i class="fa fa-user-plus"></i> New User
+          </a>
+        </div>
+        <div class="text-muted hidden-xs" style="line-height:36px;">
+          <small>💡 <strong>Tip:</strong> Use the <strong>Report</strong> menu for detailed analytics</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
+
+<!-- Enhanced Documentation Section -->
+<div class="row" style="margin-bottom:20px;">
+  <div class="col-md-8">
+    <div class="panel how-card">
+      <div class="panel-heading">
+        <i class="fa fa-info-circle"></i> Role-Based System Guide
+        <span class="role-badge badge-<?php echo strtolower($accountType); ?>"><?php echo $accountType; ?></span>
+      </div>
+      <div class="panel-body">
+        <div class="panel-group" id="howAccordion" role="tablist" aria-multiselectable="true">
+          
+          <?php if (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar'])): ?>
+          <!-- Student Management -->
+          <div class="panel panel-default">
+            <div class="panel-heading" role="tab" id="headingOne">
+              <h4 class="panel-title">
+                <a data-toggle="collapse" data-parent="#howAccordion" href="#collapseOne" aria-expanded="true" aria-controls="collapseOne">
+                  👥 Student Management
+                </a>
+              </h4>
+            </div>
+            <div id="collapseOne" class="panel-collapse collapse in" role="tabpanel" aria-labelledby="headingOne">
+              <div class="panel-body">
+                <p class="text-emphasis">Manage student records, enrollment status, and academic progress.</p>
+                <ul class="feature-list">
+                  <li><span class="feature-icon icon-success">✓</span> Full student records access</li>
+                  <li><span class="feature-icon icon-success">✓</span> Enrollment verification and processing</li>
+                  <li><span class="feature-icon icon-success">✓</span> Academic status monitoring</li>
+                  <?php if ($_SESSION['ACCOUNT_TYPE'] == 'Registrar'): ?>
+                  <li><span class="feature-icon icon-info">A</span> Complete student lifecycle management</li>
+                  <?php endif; ?>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <?php endif; ?>
+
+          <?php if (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar', 'Chairperson'])): ?>
+          <!-- Academic Management -->
+          <div class="panel panel-default">
+            <div class="panel-heading" role="tab" id="headingTwo">
+              <h4 class="panel-title">
+                <a class="collapsed" data-toggle="collapse" data-parent="#howAccordion" href="#collapseTwo" aria-expanded="false" aria-controls="collapseTwo">
+                  📚 Academic Resources
+                </a>
+              </h4>
+            </div>
+            <div id="collapseTwo" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingTwo">
+              <div class="panel-body">
+                <p class="text-emphasis">Manage courses, subjects, and departmental academic offerings.</p>
+                <ul class="feature-list">
+                  <li><span class="feature-icon icon-success">✓</span> Course and subject management</li>
+                  <li><span class="feature-icon icon-success">✓</span> Departmental academic planning</li>
+                  <li><span class="feature-icon icon-success">✓</span> Curriculum development</li>
+                  <?php if ($_SESSION['ACCOUNT_TYPE'] == 'Registrar'): ?>
+                  <li><span class="feature-icon icon-info">A</span> Cross-departmental coordination</li>
+                  <?php endif; ?>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <?php endif; ?>
+
+          <?php if (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar', 'Chairperson'])): ?>
+          <!-- Instructor Management -->
+          <div class="panel panel-default">
+            <div class="panel-heading" role="tab" id="headingThree">
+              <h4 class="panel-title">
+                <a class="collapsed" data-toggle="collapse" data-parent="#howAccordion" href="#collapseThree" aria-expanded="false" aria-controls="collapseThree">
+                  👨‍🏫 Faculty Management
+                </a>
+              </h4>
+            </div>
+            <div id="collapseThree" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingThree">
+              <div class="panel-body">
+                <p class="text-emphasis">Manage instructor assignments, schedules, and departmental staffing.</p>
+                <ul class="feature-list">
+                  <li><span class="feature-icon icon-success">✓</span> Instructor record management</li>
+                  <li><span class="feature-icon icon-success">✓</span> Course assignment coordination</li>
+                  <?php if ($_SESSION['ACCOUNT_TYPE'] == 'Chairperson'): ?>
+                  <li><span class="feature-icon icon-warning">C</span> Department-specific faculty management</li>
+                  <?php else: ?>
+                  <li><span class="feature-icon icon-info">A</span> Institution-wide faculty oversight</li>
+                  <?php endif; ?>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <?php endif; ?>
+
+          <?php if (in_array($_SESSION['ACCOUNT_TYPE'], ['Registrar'])): ?>
+          <!-- Scheduling & Enrollment -->
+          <div class="panel panel-default">
+            <div class="panel-heading" role="tab" id="headingFour">
+              <h4 class="panel-title">
+                <a class="collapsed" data-toggle="collapse" data-parent="#howAccordion" href="#collapseFour" aria-expanded="false" aria-controls="collapseFour">
+                  📅 Scheduling & Enrollment
+                </a>
+              </h4>
+            </div>
+            <div id="collapseFour" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingFour">
+              <div class="panel-body">
+                <p class="text-emphasis">Oversee class schedules, room utilization, and enrollment processes.</p>
+                <ul class="feature-list">
+                  <li><span class="feature-icon icon-success">✓</span> Class schedule management</li>
+                  <li><span class="feature-icon icon-success">✓</span> Classroom utilization tracking</li>
+                  <li><span class="feature-icon icon-success">✓</span> Enrollment process oversight</li>
+                  <?php if ($_SESSION['ACCOUNT_TYPE'] == 'Registrar'): ?>
+                  <li><span class="feature-icon icon-warning">R</span> Primary responsibility for semester activation</li>
+                  <?php endif; ?>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <?php endif; ?>
+
+          <?php if ($_SESSION['ACCOUNT_TYPE'] == 'Registrar'): ?>
+          <!-- System Administration -->
+          <div class="panel panel-default">
+            <div class="panel-heading" role="tab" id="headingFive">
+              <h4 class="panel-title">
+                <a class="collapsed" data-toggle="collapse" data-parent="#howAccordion" href="#collapseFive" aria-expanded="false" aria-controls="collapseFive">
+                  ⚙️ System Administration
+                </a>
+              </h4>
+            </div>
+            <div id="collapseFive" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingFive">
+              <div class="panel-body">
+                <p class="text-emphasis">Full system control including user management and data security.</p>
+                <ul class="feature-list">
+                  <li><span class="feature-icon icon-info">A</span> Complete user account management</li>
+                  <li><span class="feature-icon icon-info">A</span> System backup and restore operations</li>
+                  <li><span class="feature-icon icon-info">A</span> Security and access control</li>
+                  <li><span class="feature-icon icon-info">A</span> Cross-role system oversight</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <?php endif; ?>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Enhanced Quick Documentation -->
+  <div class="col-md-4">
+    <div class="panel panel-default getting-started">
+      <div class="panel-heading">
+        <i class="fa fa-rocket"></i> Quick Start Guide
+        <span class="role-badge badge-<?php echo strtolower($accountType); ?>"><?php echo $accountType; ?></span>
+      </div>
+      <div class="panel-body">
+        
+        <?php if ($_SESSION['ACCOUNT_TYPE'] == 'Registrar'): ?>
+        <div class="feature-list">
+          <li><span class="feature-icon icon-success">1</span> <strong>Set Semester:</strong> Activate current academic periods</li>
+          <li><span class="feature-icon icon-success">2</span> <strong>User Management:</strong> Create and manage all user accounts</li>
+          <li><span class="feature-icon icon-success">3</span> <strong>System Backup:</strong> Regular data backup and recovery</li>
+          <li><span class="feature-icon icon-success">4</span> <strong>Oversight:</strong> Monitor all departments and processes</li>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($_SESSION['ACCOUNT_TYPE'] == 'Registrar'): ?>
+        <div class="feature-list">
+          <li><span class="feature-icon icon-success">1</span> <strong>Semester Activation:</strong> Primary responsibility for setting active semesters</li>
+          <li><span class="feature-icon icon-success">2</span> <strong>Student Enrollment:</strong> Process and verify new enrollments</li>
+          <li><span class="feature-icon icon-success">3</span> <strong>Schedule Management:</strong> Oversee university-wide scheduling</li>
+          <li><span class="feature-icon icon-success">4</span> <strong>Reports:</strong> Generate enrollment and utilization analytics</li>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($_SESSION['ACCOUNT_TYPE'] == 'Chairperson'): ?>
+        <div class="feature-list">
+          <li><span class="feature-icon icon-success">1</span> <strong>Department Courses:</strong> Manage courses within your department</li>
+          <li><span class="feature-icon icon-success">2</span> <strong>Subject Planning:</strong> Develop and assign department subjects</li>
+          <li><span class="feature-icon icon-success">3</span> <strong>Faculty Coordination:</strong> Manage department instructors</li>
+          <li><span class="feature-icon icon-success">4</span> <strong>Department Reports:</strong> Generate department-specific analytics</li>
+        </div>
+        <?php endif; ?>
+
+        <div style="background: linear-gradient(135deg, #f8f9fa, #e9ecef); padding: 15px; border-radius: 8px; margin-top: 20px;">
+          <p class="text-muted" style="margin:0; font-size:13px;">
+            <strong>💡 Need Help?</strong><br>
+            Contact system administrator for technical support or access issues.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

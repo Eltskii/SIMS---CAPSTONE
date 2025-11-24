@@ -1,0 +1,796 @@
+# Admin System Improvement Plan
+**BSU Bokod Campus SIMS - Admin Side Overhaul**  
+**Date:** 2025-11-18  
+**Version:** 1.0
+
+---
+
+## Table of Contents
+1. [Current State Analysis](#current-state-analysis)
+2. [Critical Issues Identified](#critical-issues-identified)
+3. [Proposed Role Architecture](#proposed-role-architecture)
+4. [Feature Recommendations](#feature-recommendations)
+5. [Implementation Roadmap](#implementation-roadmap)
+6. [Database Schema Changes](#database-schema-changes)
+7. [Priority Matrix](#priority-matrix)
+
+---
+
+## Current State Analysis
+
+### ✅ What's Working
+1. **Basic Role-Based Access Control (RBAC)**
+   - Three roles implemented: Administrator, Registrar, Chairperson
+   - SweetAlert2 access denial messages
+   - Visual disabled states for unauthorized menu items
+
+2. **Core CRUD Operations**
+   - Students, Subjects, Courses, Instructors, Departments
+   - Enrollment management
+   - Schedule management
+
+3. **Basic Reporting**
+   - Student lists
+   - Class lists per instructor
+   - Enrollment reports per course/subject/semester
+
+4. **Modern UI**
+   - Responsive dashboard with stats cards
+   - Role-aware quick actions
+   - Enhanced visual design
+
+### ❌ Critical Problems
+
+#### 1. **Incomplete Role Implementation**
+- **Chairperson**: No department filtering—sees ALL departments' data instead of just their own
+- **No Instructor Role**: Instructors can't access the system at all
+- **Department Association**: Chairpersons not linked to specific departments in `useraccounts` table
+
+#### 2. **Missing Core Features**
+- No instructor portal/dashboard
+- No student enrollment workflow (approval/rejection)
+- No grade entry system for instructors
+- No email notifications
+- No audit trail beyond basic system log
+- No bulk operations (bulk import, bulk grade entry)
+- No academic calendar management
+- No attendance tracking
+
+#### 3. **Data Access Issues**
+- Chairpersons see cross-department data they shouldn't access
+- No filtering by department in reports
+- No restriction on editing other departments' data
+
+#### 4. **User Management Gaps**
+- No self-service password reset for admin users
+- No account activation/deactivation
+- No role change workflow
+- Instructors stored in `tblinstructor` but have no system access
+
+#### 5. **Architectural Weaknesses**
+- `EMPID` field exists in accounts but isn't utilized
+- No `DEPT_ID` field in `useraccounts` for Chairperson-Department linking
+- Inconsistent authorization checks across modules
+- No centralized permission system
+
+---
+
+## Critical Issues Identified
+
+### 🔴 Priority 1 (Critical - Blocking Core Functionality)
+
+1. **No Instructor Access**
+   - **Impact**: Instructors can't view their classes, enter grades, or take attendance
+   - **Fix Needed**: Create instructor portal with dashboard
+
+2. **Chairperson Department Filtering Missing**
+   - **Impact**: Data privacy violation—Chairpersons see all departments
+   - **Fix Needed**: Add `DEPT_ID` to `useraccounts`, implement filtering
+
+3. **No Enrollment Approval Workflow**
+   - **Impact**: All enrollments auto-approved, no registrar oversight
+   - **Fix Needed**: Add enrollment status workflow
+
+4. **No Grade Entry System**
+   - **Impact**: Instructors can't submit grades
+   - **Fix Needed**: Build grade entry interface for instructors
+
+### 🟡 Priority 2 (Important - Affects Efficiency)
+
+5. **No Notification System**
+   - **Impact**: Manual communication required for everything
+   - **Fix Needed**: Email/in-app notifications
+
+6. **Limited Reporting**
+   - **Impact**: Can't generate analytics needed for decision-making
+   - **Fix Needed**: Enhanced reporting with charts
+
+7. **No Bulk Operations**
+   - **Impact**: Time-consuming manual data entry
+   - **Fix Needed**: CSV import, bulk grade entry
+
+8. **No Academic Calendar**
+   - **Impact**: Important dates not centrally managed
+   - **Fix Needed**: Calendar system with milestones
+
+### 🟢 Priority 3 (Enhancement - Nice to Have)
+
+9. **No Attendance Tracking**
+10. **No Class Communication System**
+11. **No Document Management**
+12. **No Performance Analytics**
+
+---
+
+## Proposed Role Architecture
+
+### Enhanced Role System
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       ADMINISTRATOR                          │
+│  • Full system access                                        │
+│  • User management (all roles)                               │
+│  • System configuration                                      │
+│  • Cross-department oversight                                │
+│  • Backup & restore                                          │
+│  • Audit logs                                                │
+│  • Global reports                                            │
+└─────────────────────────────────────────────────────────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        │                     │                     │
+┌───────▼────────┐   ┌────────▼────────┐   ┌───────▼────────┐
+│   REGISTRAR    │   │  CHAIRPERSON    │   │  INSTRUCTOR    │
+│                │   │  (per dept)     │   │                │
+├────────────────┤   ├─────────────────┤   ├────────────────┤
+│ • Students     │   │ • Dept courses  │   │ • My classes   │
+│ • Enrollments  │   │ • Dept subjects │   │ • My students  │
+│ • Schedules    │   │ • Dept faculty  │   │ • Grade entry  │
+│ • Classrooms   │   │ • Dept schedule │   │ • Attendance   │
+│ • Reports      │   │ • Dept reports  │   │ • Class list   │
+│ • Semester     │   │ • Faculty eval  │   │ • Gradebook    │
+└────────────────┘   └─────────────────┘   └────────────────┘
+```
+
+### Role Permission Matrix
+
+| Feature | Administrator | Registrar | Chairperson | Instructor |
+|---------|--------------|-----------|-------------|------------|
+| **Dashboard** | Full stats | Student stats | Dept stats | Class stats |
+| **Students** | All (R/W) | All (R/W) | Dept only (R) | Class only (R) |
+| **Enrollments** | All (R/W) | All (R/W) | View only | View only |
+| **Courses** | All (R/W) | View only | Dept (R/W) | View only |
+| **Subjects** | All (R/W) | View only | Dept (R/W) | View only |
+| **Instructors** | All (R/W) | View only | Dept (R/W) | View self |
+| **Schedules** | All (R/W) | All (R/W) | Dept (R/W) | View own |
+| **Grades** | All (R/W) | All (R/W) | Dept (R/W) | Own classes (R/W) |
+| **Reports** | All reports | Student reports | Dept reports | Class reports |
+| **Users** | All (R/W) | None | None | None |
+| **System Config** | Full | Semester only | None | None |
+| **Backup** | Yes | No | No | No |
+
+---
+
+## Feature Recommendations
+
+### 🎯 Phase 1: Critical Features (Weeks 1-4)
+
+#### 1.1 Department-Linked Accounts
+**Problem**: Chairpersons not linked to departments  
+**Solution**: Add department association to user accounts
+
+**Database Changes:**
+```sql
+-- Add DEPT_ID to useraccounts
+ALTER TABLE `useraccounts` 
+ADD COLUMN `DEPT_ID` INT NULL DEFAULT NULL AFTER `ACCOUNT_TYPE`,
+ADD CONSTRAINT `fk_useraccounts_dept` 
+    FOREIGN KEY (`DEPT_ID`) REFERENCES `department`(`DEPT_ID`) 
+    ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Add index for performance
+CREATE INDEX `idx_dept_id` ON `useraccounts`(`DEPT_ID`);
+```
+
+**Implementation:**
+- User creation form: Add department dropdown (shown only for Chairperson role)
+- User edit form: Allow changing department assignment
+- Middleware: Filter queries by `$_SESSION['DEPT_ID']` for Chairpersons
+
+#### 1.2 Instructor Role & Portal
+**Problem**: Instructors have no system access  
+**Solution**: Create instructor user type and dedicated dashboard
+
+**Database Changes:**
+```sql
+-- Link instructors to user accounts
+ALTER TABLE `tblinstructor` 
+ADD COLUMN `ACCOUNT_ID` INT NULL DEFAULT NULL AFTER `INST_ID`,
+ADD CONSTRAINT `fk_instructor_account` 
+    FOREIGN KEY (`ACCOUNT_ID`) REFERENCES `useraccounts`(`ACCOUNT_ID`) 
+    ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Add Instructor to ACCOUNT_TYPE enum
+ALTER TABLE `useraccounts` 
+MODIFY COLUMN `ACCOUNT_TYPE` 
+    ENUM('Administrator','Registrar','Chairperson','Instructor') 
+    NOT NULL DEFAULT 'Instructor';
+```
+
+**Features:**
+- **Instructor Dashboard** (`admin/instructor_portal/dashboard.php`):
+  ```
+  ┌─────────────────────────────────────────────┐
+  │ My Classes This Semester                    │
+  ├─────────────────────────────────────────────┤
+  │ BSCS 101 - Programming 1 (40 students)      │
+  │ BSCS 201 - Data Structures (35 students)    │
+  │ BSIT 101 - Web Development (42 students)    │
+  └─────────────────────────────────────────────┘
+  
+  ┌──────────────┬──────────────┬──────────────┐
+  │ Total Classes│ Total Students│ Pending Grades│
+  │      3       │      117       │      15       │
+  └──────────────┴──────────────┴──────────────┘
+  ```
+
+- **Class List View**: Students enrolled in instructor's subjects
+- **Grade Entry**: Interface for submitting student grades
+- **Attendance**: Daily attendance tracking
+- **Class Schedule**: Instructor's teaching schedule
+
+#### 1.3 Enrollment Workflow System
+**Problem**: No approval process for enrollments  
+**Solution**: Multi-step enrollment with statuses
+
+**Database Changes:**
+```sql
+-- Add enrollment status to tblstudent
+ALTER TABLE `tblstudent` 
+ADD COLUMN `ENROLLMENT_STATUS` 
+    ENUM('Pending','Approved','Rejected','Enrolled') 
+    NOT NULL DEFAULT 'Pending' AFTER `NewEnrollees`;
+
+-- Add approval tracking
+ALTER TABLE `tblstudent` 
+ADD COLUMN `APPROVED_BY` INT NULL DEFAULT NULL,
+ADD COLUMN `APPROVED_DATE` DATETIME NULL DEFAULT NULL,
+ADD COLUMN `REJECTION_REASON` TEXT NULL DEFAULT NULL;
+```
+
+**Workflow:**
+```
+Student Submits → [Pending] → Registrar Reviews → [Approved/Rejected]
+                                    ↓
+                              [Approved] → Student Pays → [Enrolled]
+```
+
+**Features:**
+- **Enrollees Dashboard**: List of pending enrollments
+- **Approval Interface**: Quick approve/reject with reason
+- **Email Notifications**: Auto-notify students of status changes
+- **Bulk Actions**: Approve multiple enrollments at once
+
+#### 1.4 Grade Management System
+**Problem**: No way for instructors to submit grades  
+**Solution**: Comprehensive gradebook
+
+**Database Changes:**
+```sql
+-- Create grades table
+CREATE TABLE `tblgrades` (
+  `GRADE_ID` INT AUTO_INCREMENT PRIMARY KEY,
+  `IDNO` INT NOT NULL,
+  `SUBJ_ID` INT NOT NULL,
+  `INST_ID` INT NOT NULL,
+  `SEMESTER` VARCHAR(50),
+  `SCHOOLYEAR` VARCHAR(50),
+  `PRELIM` DECIMAL(5,2) DEFAULT NULL,
+  `MIDTERM` DECIMAL(5,2) DEFAULT NULL,
+  `PREFINAL` DECIMAL(5,2) DEFAULT NULL,
+  `FINAL` DECIMAL(5,2) DEFAULT NULL,
+  `AVE` DECIMAL(5,2) DEFAULT NULL,
+  `REMARKS` VARCHAR(50),
+  `SUBMITTED_DATE` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `MODIFIED_DATE` DATETIME ON UPDATE CURRENT_TIMESTAMP,
+  KEY `idx_student` (`IDNO`),
+  KEY `idx_subject` (`SUBJ_ID`),
+  KEY `idx_instructor` (`INST_ID`),
+  CONSTRAINT `fk_grades_student` FOREIGN KEY (`IDNO`) 
+      REFERENCES `tblstudent` (`IDNO`) ON DELETE CASCADE,
+  CONSTRAINT `fk_grades_subject` FOREIGN KEY (`SUBJ_ID`) 
+      REFERENCES `subject` (`SUBJ_ID`) ON DELETE CASCADE,
+  CONSTRAINT `fk_grades_instructor` FOREIGN KEY (`INST_ID`) 
+      REFERENCES `tblinstructor` (`INST_ID`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+**Features:**
+- **Grade Entry Form**: Spreadsheet-like interface
+- **Bulk Import**: Upload CSV with grades
+- **Auto-calculation**: Average computed automatically
+- **Grade Locking**: Lock grades after deadline
+- **Student View**: Students can view their grades
+
+---
+
+### 🎯 Phase 2: Important Features (Weeks 5-8)
+
+#### 2.1 Notification System
+**Features:**
+- Email notifications (enrollment status, grade posted, schedule changes)
+- In-app notifications with bell icon
+- SMS integration (optional, using Twilio/Semaphore API)
+
+**Database:**
+```sql
+CREATE TABLE `notifications` (
+  `notification_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `user_type` ENUM('Student','Administrator','Registrar','Chairperson','Instructor'),
+  `user_id` INT NOT NULL,
+  `title` VARCHAR(255),
+  `message` TEXT,
+  `type` ENUM('info','success','warning','danger') DEFAULT 'info',
+  `is_read` TINYINT(1) DEFAULT 0,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `read_at` DATETIME DEFAULT NULL,
+  KEY `idx_user` (`user_type`, `user_id`),
+  KEY `idx_unread` (`is_read`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+#### 2.2 Enhanced Reporting & Analytics
+**Features:**
+- **Dashboard Charts**: Enrollment trends, grade distribution
+- **Export Options**: PDF, Excel, CSV
+- **Custom Reports**: Build reports with filters
+- **Scheduled Reports**: Auto-email weekly/monthly reports
+
+**Report Types:**
+1. Enrollment Statistics (by department, course, semester)
+2. Grade Analytics (pass/fail rates, GPA trends)
+3. Faculty Load Report (units per instructor)
+4. Classroom Utilization (occupancy rates)
+5. Student Progress Report (units completed, academic standing)
+
+#### 2.3 Bulk Operations
+**Features:**
+- **CSV Import**: Students, subjects, schedules
+- **Bulk Grade Entry**: Upload grades via spreadsheet
+- **Bulk Schedule Creation**: Import timetable
+- **Bulk Email**: Send announcements to groups
+
+#### 2.4 Academic Calendar
+**Features:**
+- **Milestone Management**: Add/edit important dates
+- **Calendar View**: Month/week views
+- **Reminders**: Auto-notify before deadlines
+- **Public Calendar**: Student-facing calendar
+
+**Database:**
+```sql
+CREATE TABLE `academic_calendar` (
+  `event_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `event_title` VARCHAR(255) NOT NULL,
+  `event_description` TEXT,
+  `event_type` ENUM('Enrollment','Exam','Holiday','Deadline','Other'),
+  `start_date` DATE NOT NULL,
+  `end_date` DATE,
+  `all_day` TINYINT(1) DEFAULT 1,
+  `color` VARCHAR(7) DEFAULT '#3498db',
+  `created_by` INT,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY `idx_dates` (`start_date`, `end_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+---
+
+### 🎯 Phase 3: Enhancements (Weeks 9-12)
+
+#### 3.1 Attendance Tracking
+- Daily attendance per class
+- Attendance reports (per student, per class)
+- Attendance percentage in grade computation
+- QR code check-in (optional)
+
+#### 3.2 Class Communication
+- Announcements per class
+- Message board
+- File sharing (syllabus, handouts)
+
+#### 3.3 Performance Analytics
+- Student at-risk identification (low GPA, poor attendance)
+- Instructor performance metrics
+- Department comparisons
+- Retention rate analysis
+
+#### 3.4 Document Management
+- Upload/manage official documents
+- Student document verification
+- Digital signatures
+- Document expiry tracking
+
+---
+
+## Implementation Roadmap
+
+### Week 1-2: Foundation
+**Goal**: Set up department linking and instructor accounts
+
+**Tasks:**
+1. ✅ Database schema updates (DEPT_ID, ACCOUNT_ID links)
+2. ✅ Migration script for existing data
+3. ✅ Update user creation/edit forms
+4. ✅ Implement department filtering middleware
+5. ✅ Create instructor account type
+
+**Deliverables:**
+- Updated `useraccounts` table with DEPT_ID
+- Linked instructors to accounts
+- Department filter working for Chairpersons
+
+### Week 3-4: Instructor Portal
+**Goal**: Build instructor dashboard and core features
+
+**Tasks:**
+1. ✅ Create instructor dashboard with class list
+2. ✅ Build "My Classes" view
+3. ✅ Implement class student list
+4. ✅ Create grade entry interface
+5. ✅ Add authentication for instructor role
+
+**Deliverables:**
+- Instructor login working
+- Dashboard showing instructor's classes
+- Basic grade entry form
+
+### Week 5-6: Enrollment Workflow
+**Goal**: Implement enrollment approval system
+
+**Tasks:**
+1. ✅ Update enrollment status field
+2. ✅ Create enrollment review dashboard
+3. ✅ Build approval/rejection interface
+4. ✅ Implement email notifications
+5. ✅ Add bulk approval
+
+**Deliverables:**
+- Registrar can approve/reject enrollments
+- Students notified via email
+- Enrollment status tracking
+
+### Week 7-8: Grade System & Notifications
+**Goal**: Complete grade management and notification system
+
+**Tasks:**
+1. ✅ Create grades table and CRUD
+2. ✅ Build grade entry spreadsheet view
+3. ✅ Implement grade locking
+4. ✅ Create notification system
+5. ✅ Add in-app notification UI
+
+**Deliverables:**
+- Full grade management for instructors
+- Email and in-app notifications working
+- Students can view grades
+
+### Week 9-10: Enhanced Reporting
+**Goal**: Add analytics and advanced reports
+
+**Tasks:**
+1. ✅ Integrate Chart.js for dashboards
+2. ✅ Create enrollment trend charts
+3. ✅ Build grade distribution charts
+4. ✅ Add PDF export functionality
+5. ✅ Create custom report builder
+
+**Deliverables:**
+- Interactive charts on dashboards
+- PDF/Excel export working
+- Custom report generation
+
+### Week 11-12: Bulk Operations & Calendar
+**Goal**: Productivity features and academic calendar
+
+**Tasks:**
+1. ✅ CSV import functionality
+2. ✅ Bulk grade upload
+3. ✅ Academic calendar CRUD
+4. ✅ Calendar view integration
+5. ✅ Testing and bug fixes
+
+**Deliverables:**
+- CSV import for students/subjects/grades
+- Academic calendar with notifications
+- System testing complete
+
+---
+
+## Database Schema Changes
+
+### Summary of Required Changes
+
+```sql
+-- ==================================================================
+-- PHASE 1: CRITICAL SCHEMA UPDATES
+-- ==================================================================
+
+-- 1. Add department linking to user accounts
+ALTER TABLE `useraccounts` 
+ADD COLUMN `DEPT_ID` INT NULL DEFAULT NULL AFTER `ACCOUNT_TYPE`,
+ADD COLUMN `IS_ACTIVE` TINYINT(1) DEFAULT 1 AFTER `DEPT_ID`,
+ADD COLUMN `LAST_LOGIN` DATETIME NULL DEFAULT NULL,
+ADD CONSTRAINT `fk_useraccounts_dept` 
+    FOREIGN KEY (`DEPT_ID`) REFERENCES `department`(`DEPT_ID`) 
+    ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- 2. Add Instructor role to ACCOUNT_TYPE
+ALTER TABLE `useraccounts` 
+MODIFY COLUMN `ACCOUNT_TYPE` 
+    ENUM('Administrator','Registrar','Chairperson','Instructor') 
+    NOT NULL;
+
+-- 3. Link instructors to user accounts
+ALTER TABLE `tblinstructor` 
+ADD COLUMN `ACCOUNT_ID` INT NULL DEFAULT NULL AFTER `INST_ID`,
+ADD COLUMN `IS_ACTIVE` TINYINT(1) DEFAULT 1,
+ADD CONSTRAINT `fk_instructor_account` 
+    FOREIGN KEY (`ACCOUNT_ID`) REFERENCES `useraccounts`(`ACCOUNT_ID`) 
+    ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- 4. Enhanced enrollment tracking
+ALTER TABLE `tblstudent` 
+ADD COLUMN `ENROLLMENT_STATUS` 
+    ENUM('Pending','Approved','Rejected','Enrolled','Withdrawn') 
+    NOT NULL DEFAULT 'Pending',
+ADD COLUMN `APPROVED_BY` INT NULL DEFAULT NULL,
+ADD COLUMN `APPROVED_DATE` DATETIME NULL DEFAULT NULL,
+ADD COLUMN `REJECTION_REASON` TEXT NULL DEFAULT NULL,
+ADD COLUMN `WITHDRAWAL_DATE` DATETIME NULL DEFAULT NULL,
+ADD CONSTRAINT `fk_student_approved_by` 
+    FOREIGN KEY (`APPROVED_BY`) REFERENCES `useraccounts`(`ACCOUNT_ID`) 
+    ON DELETE SET NULL;
+
+-- 5. Create grades table
+CREATE TABLE IF NOT EXISTS `tblgrades` (
+  `GRADE_ID` INT AUTO_INCREMENT PRIMARY KEY,
+  `IDNO` INT NOT NULL,
+  `SUBJ_ID` INT NOT NULL,
+  `INST_ID` INT NOT NULL,
+  `SEMESTER` VARCHAR(50) NOT NULL,
+  `SCHOOLYEAR` VARCHAR(50) NOT NULL,
+  `PRELIM` DECIMAL(5,2) DEFAULT NULL,
+  `MIDTERM` DECIMAL(5,2) DEFAULT NULL,
+  `PREFINAL` DECIMAL(5,2) DEFAULT NULL,
+  `FINAL` DECIMAL(5,2) DEFAULT NULL,
+  `AVE` DECIMAL(5,2) GENERATED ALWAYS AS (
+    (COALESCE(PRELIM,0) + COALESCE(MIDTERM,0) + 
+     COALESCE(PREFINAL,0) + COALESCE(FINAL,0)) / 4
+  ) STORED,
+  `REMARKS` ENUM('Passed','Failed','INC','DRP') DEFAULT NULL,
+  `IS_LOCKED` TINYINT(1) DEFAULT 0,
+  `SUBMITTED_DATE` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `MODIFIED_DATE` DATETIME ON UPDATE CURRENT_TIMESTAMP,
+  KEY `idx_student` (`IDNO`),
+  KEY `idx_subject` (`SUBJ_ID`),
+  KEY `idx_instructor` (`INST_ID`),
+  KEY `idx_semester` (`SEMESTER`, `SCHOOLYEAR`),
+  UNIQUE KEY `unique_grade` (`IDNO`, `SUBJ_ID`, `SEMESTER`, `SCHOOLYEAR`),
+  CONSTRAINT `fk_grades_student` FOREIGN KEY (`IDNO`) 
+      REFERENCES `tblstudent` (`IDNO`) ON DELETE CASCADE,
+  CONSTRAINT `fk_grades_subject` FOREIGN KEY (`SUBJ_ID`) 
+      REFERENCES `subject` (`SUBJ_ID`) ON DELETE CASCADE,
+  CONSTRAINT `fk_grades_instructor` FOREIGN KEY (`INST_ID`) 
+      REFERENCES `tblinstructor` (`INST_ID`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ==================================================================
+-- PHASE 2: NOTIFICATION & CALENDAR SYSTEMS
+-- ==================================================================
+
+-- 6. Notification system
+CREATE TABLE IF NOT EXISTS `notifications` (
+  `notification_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `user_type` ENUM('Student','Administrator','Registrar','Chairperson','Instructor') NOT NULL,
+  `user_id` INT NOT NULL,
+  `title` VARCHAR(255) NOT NULL,
+  `message` TEXT NOT NULL,
+  `link` VARCHAR(255) DEFAULT NULL,
+  `type` ENUM('info','success','warning','danger') DEFAULT 'info',
+  `is_read` TINYINT(1) DEFAULT 0,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `read_at` DATETIME DEFAULT NULL,
+  KEY `idx_user` (`user_type`, `user_id`, `is_read`),
+  KEY `idx_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 7. Academic calendar
+CREATE TABLE IF NOT EXISTS `academic_calendar` (
+  `event_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `event_title` VARCHAR(255) NOT NULL,
+  `event_description` TEXT,
+  `event_type` ENUM('Enrollment','Exam','Holiday','Deadline','Meeting','Other') NOT NULL,
+  `start_date` DATE NOT NULL,
+  `end_date` DATE DEFAULT NULL,
+  `start_time` TIME DEFAULT NULL,
+  `end_time` TIME DEFAULT NULL,
+  `all_day` TINYINT(1) DEFAULT 1,
+  `location` VARCHAR(255) DEFAULT NULL,
+  `color` VARCHAR(7) DEFAULT '#3498db',
+  `is_public` TINYINT(1) DEFAULT 1,
+  `created_by` INT NOT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME ON UPDATE CURRENT_TIMESTAMP,
+  KEY `idx_dates` (`start_date`, `end_date`),
+  KEY `idx_type` (`event_type`),
+  CONSTRAINT `fk_calendar_creator` FOREIGN KEY (`created_by`) 
+      REFERENCES `useraccounts`(`ACCOUNT_ID`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ==================================================================
+-- PHASE 3: ATTENDANCE & COMMUNICATION
+-- ==================================================================
+
+-- 8. Attendance tracking
+CREATE TABLE IF NOT EXISTS `attendance` (
+  `attendance_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `IDNO` INT NOT NULL,
+  `SUBJ_ID` INT NOT NULL,
+  `INST_ID` INT NOT NULL,
+  `attendance_date` DATE NOT NULL,
+  `status` ENUM('Present','Absent','Late','Excused') NOT NULL,
+  `remarks` TEXT DEFAULT NULL,
+  `recorded_by` INT NOT NULL,
+  `recorded_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY `idx_student` (`IDNO`, `attendance_date`),
+  KEY `idx_subject` (`SUBJ_ID`, `attendance_date`),
+  UNIQUE KEY `unique_attendance` (`IDNO`, `SUBJ_ID`, `attendance_date`),
+  CONSTRAINT `fk_attendance_student` FOREIGN KEY (`IDNO`) 
+      REFERENCES `tblstudent` (`IDNO`) ON DELETE CASCADE,
+  CONSTRAINT `fk_attendance_subject` FOREIGN KEY (`SUBJ_ID`) 
+      REFERENCES `subject` (`SUBJ_ID`) ON DELETE CASCADE,
+  CONSTRAINT `fk_attendance_instructor` FOREIGN KEY (`INST_ID`) 
+      REFERENCES `tblinstructor` (`INST_ID`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 9. Class announcements
+CREATE TABLE IF NOT EXISTS `announcements` (
+  `announcement_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `SUBJ_ID` INT DEFAULT NULL, -- NULL = global announcement
+  `INST_ID` INT NOT NULL,
+  `title` VARCHAR(255) NOT NULL,
+  `content` TEXT NOT NULL,
+  `posted_date` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `is_pinned` TINYINT(1) DEFAULT 0,
+  KEY `idx_subject` (`SUBJ_ID`),
+  KEY `idx_date` (`posted_date`),
+  CONSTRAINT `fk_announcement_subject` FOREIGN KEY (`SUBJ_ID`) 
+      REFERENCES `subject` (`SUBJ_ID`) ON DELETE CASCADE,
+  CONSTRAINT `fk_announcement_instructor` FOREIGN KEY (`INST_ID`) 
+      REFERENCES `tblinstructor` (`INST_ID`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ==================================================================
+-- INDEXES FOR PERFORMANCE
+-- ==================================================================
+
+-- Add indexes to existing tables
+CREATE INDEX `idx_course_dept` ON `course`(`DEPT_ID`);
+CREATE INDEX `idx_subject_course` ON `subject`(`COURSE_ID`);
+CREATE INDEX `idx_student_course` ON `tblstudent`(`COURSE_ID`);
+CREATE INDEX `idx_student_status` ON `tblstudent`(`ENROLLMENT_STATUS`);
+```
+
+---
+
+## Priority Matrix
+
+### Implementation Priority
+
+| Feature | Priority | Effort | Impact | Dependencies |
+|---------|----------|--------|--------|--------------|
+| **Department Linking** | 🔴 Critical | Low | High | None |
+| **Instructor Role** | 🔴 Critical | Medium | High | Department Linking |
+| **Enrollment Workflow** | 🔴 Critical | Medium | High | None |
+| **Grade System** | 🔴 Critical | High | High | Instructor Role |
+| **Department Filtering** | 🔴 Critical | Low | High | Department Linking |
+| **Notification System** | 🟡 Important | Medium | Medium | None |
+| **Enhanced Reports** | 🟡 Important | Medium | Medium | None |
+| **Bulk Operations** | 🟡 Important | Medium | Medium | None |
+| **Academic Calendar** | 🟡 Important | Low | Medium | None |
+| **Attendance System** | 🟢 Enhancement | Medium | Low | Instructor Role |
+| **Class Communication** | 🟢 Enhancement | Low | Low | Instructor Role |
+| **Performance Analytics** | 🟢 Enhancement | High | Medium | Grade System |
+| **Document Management** | 🟢 Enhancement | High | Low | None |
+
+### Quick Wins (Low Effort, High Impact)
+1. ✅ Department linking to user accounts (1 day)
+2. ✅ Department filtering for Chairpersons (2 days)
+3. ✅ Academic calendar basic CRUD (3 days)
+4. ✅ Notification table setup (1 day)
+
+### High Impact (Must Implement)
+1. ✅ Instructor portal with dashboard (1 week)
+2. ✅ Grade entry system (1 week)
+3. ✅ Enrollment approval workflow (1 week)
+4. ✅ Email notifications (3 days)
+
+---
+
+## Success Metrics
+
+### Key Performance Indicators (KPIs)
+
+1. **System Adoption**
+   - Target: 90% of instructors actively use the system within 1 month
+   - Measure: Login frequency, feature usage
+
+2. **Time Savings**
+   - Target: 60% reduction in enrollment processing time
+   - Measure: Time from submission to approval
+
+3. **Data Accuracy**
+   - Target: 95% grade submission accuracy
+   - Measure: Error rate in grade entry
+
+4. **User Satisfaction**
+   - Target: 4.5/5 satisfaction rating
+   - Measure: Post-implementation survey
+
+5. **Process Efficiency**
+   - Target: 80% of enrollments approved within 24 hours
+   - Measure: Average approval time
+
+---
+
+## Next Steps
+
+### Immediate Actions (This Week)
+
+1. **Review & Approve Plan**
+   - Stakeholder meeting with Registrar, Chairpersons
+   - Get buy-in from department heads
+   - Prioritize features based on feedback
+
+2. **Prepare Development Environment**
+   - Create development database backup
+   - Set up testing environment
+   - Create git branch: `feature/admin-improvement`
+
+3. **Begin Phase 1 Development**
+   - Start with database schema updates
+   - Implement department linking
+   - Create migration scripts for existing data
+
+### Week 2 Deliverables
+
+- Database schema updated
+- Department filter working for Chairpersons
+- Instructor accounts can be created
+- Documentation updated
+
+---
+
+## Conclusion
+
+The current admin system has a solid foundation but needs significant enhancements to be truly functional. The biggest gaps are:
+
+1. ❌ **No instructor access** - Critical blocker
+2. ❌ **No department filtering** - Security/privacy issue
+3. ❌ **No enrollment workflow** - Process gap
+4. ❌ **No grade entry** - Core feature missing
+
+By implementing this roadmap over 12 weeks, you'll transform the admin system from "a mess" into a **comprehensive, role-aware, department-segregated system** that properly serves all stakeholders:
+
+- ✅ Administrators: Full oversight and control
+- ✅ Registrars: Efficient enrollment management
+- ✅ Chairpersons: Department-specific views and controls
+- ✅ Instructors: Grade entry, class management, student interaction
+
+**Recommendation**: Start with **Phase 1 (Weeks 1-4)** immediately. These are critical features that unblock core workflows and fix major security issues.
+
+---
+
+**Questions or ready to start implementation?**

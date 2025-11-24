@@ -1,0 +1,351 @@
+# Department Filtering Implementation Guide
+
+**Phase 1A: Department Filtering** - Implementation Examples
+
+---
+
+## ✅ What's Been Implemented
+
+### 1. **Database Changes**
+- ✅ `useraccounts.DEPT_ID` - Links Chairpersons to departments
+- ✅ `useraccounts.IS_ACTIVE` - Enable/disable accounts
+- ✅ `useraccounts.LAST_LOGIN` - Track login activity
+- ✅ Foreign keys and indexes added
+
+### 2. **User Management Forms**
+- ✅ `/admin/user/add.php` - Department dropdown (shows for Chairperson)
+- ✅ `/admin/user/edit.php` - Department dropdown (shows for Chairperson)
+- ✅ JavaScript toggle for department field visibility
+- ✅ Validation: Department required for Chairperson role
+
+### 3. **Controller Updates**
+- ✅ `/admin/user/controller.php` - Handles DEPT_ID on create/update
+- ✅ Links instructors to user accounts via `ACCOUNT_ID`
+- ✅ Updates `tblinstructor.ACCOUNT_ID` when creating Instructor users
+
+### 4. **Middleware**
+- ✅ `/include/department-filter.php` - Complete filtering system
+- ✅ Included in `/include/initialize.php` - Available everywhere
+
+### 5. **Session Management**
+- ✅ `/include/accounts.php` - Stores DEPT_ID in session on login
+- ✅ Updates `LAST_LOGIN` timestamp on login
+
+---
+
+## 🎯 How to Apply Department Filtering
+
+### Example 1: Filter Courses by Department
+
+**Before** (shows all courses):
+```php
+<?php
+// admin/course/index.php
+$mydb->setQuery("SELECT * FROM course ORDER BY COURSE_NAME");
+$courses = $mydb->loadResultList();
+?>
+```
+
+**After** (filters by department for Chairpersons):
+```php
+<?php
+// admin/course/index.php
+require_once("../../include/initialize.php");
+
+// Build query with department filter
+$sql = "SELECT c.*, d.DEPARTMENT_NAME 
+        FROM course c 
+        LEFT JOIN department d ON c.DEPT_ID = d.DEPT_ID 
+        WHERE 1=1 ";
+
+// Add department filter for Chairpersons
+$sql .= getDepartmentFilter('c'); // Adds: AND c.DEPT_ID = X
+
+$sql .= " ORDER BY c.COURSE_NAME";
+
+$mydb->setQuery($sql);
+$courses = $mydb->loadResultList();
+?>
+```
+
+### Example 2: Filter Subjects by Department (via Course)
+
+**File**: `admin/subject/index.php`
+
+```php
+<?php
+require_once("../../include/initialize.php");
+
+// Subjects belong to courses, courses belong to departments
+$sql = "SELECT s.*, c.COURSE_NAME, c.DEPT_ID, d.DEPARTMENT_NAME
+        FROM subject s
+        INNER JOIN course c ON s.COURSE_ID = c.COURSE_ID
+        LEFT JOIN department d ON c.DEPT_ID = d.DEPT_ID
+        WHERE 1=1 ";
+
+// Filter by department for Chairpersons
+$sql .= getDepartmentFilter('c'); // Uses course table alias
+
+$sql .= " ORDER BY s.SUBJ_CODE";
+
+$mydb->setQuery($sql);
+$subjects = $mydb->loadResultList();
+?>
+```
+
+### Example 3: Protect Add/Edit Forms
+
+**File**: `admin/course/add.php` or `edit.php`
+
+```php
+<?php
+require_once("../../include/initialize.php");
+
+// Check access
+if (!isset($_SESSION['ACCOUNT_ID'])) {
+    redirect(web_root."admin/index.php");
+}
+
+// Only allow edit if user has department access
+if (isset($_GET['id'])) {
+    $courseId = (int)$_GET['id'];
+    
+    // Get course department
+    $mydb->setQuery("SELECT DEPT_ID FROM course WHERE COURSE_ID = {$courseId}");
+    $course = $mydb->loadSingleResult();
+    
+    if ($course && !hasDepartmentAccess($course->DEPT_ID)) {
+        message("You don't have permission to edit this course.", "error");
+        redirect("index.php");
+    }
+}
+
+// Rest of your form code...
+?>
+
+<!-- Department dropdown should only show user's department for Chairpersons -->
+<select name="DEPT_ID" class="form-control" required>
+    <?php
+    $departments = getDepartmentsForUser(); // Returns all for Admin, user's dept for Chairperson
+    foreach ($departments as $dept):
+    ?>
+        <option value="<?php echo $dept->DEPT_ID; ?>">
+            <?php echo htmlspecialchars($dept->DEPARTMENT_NAME); ?>
+        </option>
+    <?php endforeach; ?>
+</select>
+```
+
+### Example 4: Filter Dashboard Stats
+
+**File**: `admin/home.php`
+
+```php
+<?php
+// Count courses by department
+$sql = "SELECT COUNT(*) AS cnt FROM course WHERE 1=1 ";
+$sql .= getDepartmentFilter(); // Table has DEPT_ID column directly
+$courses_count = safeCount($mydb, $sql);
+
+// Count subjects (via course relationship)
+$deptId = getCurrentDepartmentId();
+if ($deptId !== null) {
+    $sql = "SELECT COUNT(*) AS cnt FROM subject s 
+            WHERE s.COURSE_ID IN (SELECT COURSE_ID FROM course WHERE DEPT_ID = {$deptId})";
+} else {
+    $sql = "SELECT COUNT(*) AS cnt FROM subject";
+}
+$subjects_count = safeCount($mydb, $sql);
+?>
+```
+
+### Example 5: Display Department Badge
+
+**File**: `admin/theme/templates.php` or any page
+
+```php
+<!-- Show department info for Chairpersons -->
+<div class="topbar-info">
+    Your Role: <?php echo $_SESSION['ACCOUNT_TYPE']; ?>
+    <?php echo displayDepartmentBadge(); // Shows department badge for Chairpersons ?>
+</div>
+```
+
+---
+
+## 📋 Helper Functions Reference
+
+### Core Functions
+
+```php
+// Get current user's department ID (null if not Chairperson)
+$deptId = getCurrentDepartmentId();
+
+// Get SQL filter clause
+$filter = getDepartmentFilter('c'); // For table alias 'c'
+$filter = getDepartmentFilter(); // For table with direct DEPT_ID column
+
+// Check if user has access to a department
+if (hasDepartmentAccess($deptId)) {
+    // Allow access
+}
+
+// Require department access or redirect
+requireDepartmentAccess($deptId, 'index.php');
+
+// Get department name
+$deptName = getCurrentDepartmentName();
+
+// Get departments for dropdown (filtered by user role)
+$departments = getDepartmentsForUser();
+```
+
+### Role Check Functions
+
+```php
+if (isAdministrator()) { /* Full access */ }
+if (isRegistrar()) { /* Student management */ }
+if (isChairperson()) { /* Department-specific */ }
+if (isInstructor()) { /* Class management */ }
+```
+
+### UI Helper
+
+```php
+// Display department badge in UI
+echo displayDepartmentBadge();
+// Output: <span class="label label-info"><i class="fa fa-building"></i> Computer Science</span>
+```
+
+---
+
+## 🚦 Testing Checklist
+
+### Test as Administrator
+- [ ] Can see all departments' data
+- [ ] Can create users with any department
+- [ ] Can edit all courses/subjects
+- [ ] Department filter NOT applied
+
+### Test as Chairperson (with DEPT_ID = 1)
+- [ ] Can only see Department 1 data
+- [ ] Cannot see other departments' courses
+- [ ] Cannot edit other departments' subjects
+- [ ] Department badge shows in UI
+- [ ] Dropdown only shows assigned department
+
+### Test as Chairperson (no DEPT_ID assigned)
+- [ ] Gets error message: "Your account is not assigned to a department"
+- [ ] Cannot access department-restricted pages
+- [ ] Admin can assign department via edit form
+
+### Test as Registrar
+- [ ] Can see all departments (no filter)
+- [ ] Can manage students across all departments
+- [ ] Cannot change user departments
+
+---
+
+## 🔄 Migration Path for Existing Modules
+
+### Step 1: Identify Modules to Update
+
+Modules that need department filtering:
+- ✅ **Course** (`admin/course/`) - Direct DEPT_ID
+- ✅ **Subject** (`admin/subject/`) - Via Course relationship
+- ⏳ **Instructor** (`admin/instructor/`) - Via Department assignment
+- ⏳ **Schedule** (`admin/schedule/`) - Via Course/Subject
+- ⏳ **Class** (`admin/class/`) - Via Course
+
+### Step 2: Update Each Module
+
+For each module:
+1. Update `index.php` list view to apply filter
+2. Update `add.php` to restrict department dropdown
+3. Update `edit.php` to check access
+4. Update `controller.php` to validate access
+5. Test with different user roles
+
+### Step 3: Test Thoroughly
+
+Create test users:
+```sql
+-- Test Chairperson for Computer Science (DEPT_ID = 1)
+INSERT INTO useraccounts (ACCOUNT_NAME, ACCOUNT_USERNAME, ACCOUNT_PASSWORD, ACCOUNT_TYPE, DEPT_ID)
+VALUES ('CS Chairperson', 'cs_chair', SHA1('password123'), 'Chairperson', 1);
+
+-- Test Chairperson for Business (DEPT_ID = 2)
+INSERT INTO useraccounts (ACCOUNT_NAME, ACCOUNT_USERNAME, ACCOUNT_PASSWORD, ACCOUNT_TYPE, DEPT_ID)
+VALUES ('Business Chairperson', 'bus_chair', SHA1('password123'), 'Chairperson', 2);
+```
+
+---
+
+## 🐛 Common Issues & Solutions
+
+### Issue: Chairperson sees all departments
+
+**Cause**: Filter not applied to query
+
+**Fix**: Add `getDepartmentFilter()` to WHERE clause
+```php
+$sql .= getDepartmentFilter('c'); // Don't forget table alias!
+```
+
+### Issue: "You don't have permission" error for Admin
+
+**Cause**: Access check not skipping Administrators
+
+**Fix**: Use `hasDepartmentAccess()` instead of direct checks
+```php
+// WRONG
+if ($_SESSION['DEPT_ID'] != $course->DEPT_ID) { /* error */ }
+
+// RIGHT
+if (!hasDepartmentAccess($course->DEPT_ID)) { /* error */ }
+```
+
+### Issue: Department dropdown empty for Chairperson
+
+**Cause**: Using wrong function to get departments
+
+**Fix**: Use `getDepartmentsForUser()` instead of direct query
+```php
+// WRONG
+$mydb->setQuery("SELECT * FROM department");
+
+// RIGHT
+$departments = getDepartmentsForUser(); // Returns only user's department for Chairperson
+```
+
+---
+
+## ✨ Next Steps
+
+After Phase 1A is complete and tested:
+
+**Phase 1B**: Instructor Portal (Days 2-3)
+- Create instructor dashboard
+- "My Classes" view
+- Class student roster
+- Grade entry interface
+
+**Phase 1C**: Enrollment Workflow (Days 4-5)
+- Enrollment approval dashboard
+- Approve/reject interface
+- Bulk operations
+- Email notifications
+
+---
+
+## 📞 Support
+
+If you encounter issues:
+1. Check console for JavaScript errors
+2. Check database for DEPT_ID values: `SELECT * FROM useraccounts WHERE ACCOUNT_TYPE = 'Chairperson';`
+3. Check session: `var_dump($_SESSION);`
+4. Test with different user roles
+
+---
+
+**Status**: ✅ Phase 1A Complete - Ready for Testing

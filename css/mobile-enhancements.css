@@ -1,0 +1,672 @@
+/**
+ * Mobile Enhancements for BSU Bokod Campus SIMS
+ * Version: 1.0.0
+ * Date: 2025-11-18
+ * 
+ * Comprehensive mobile responsiveness improvements for:
+ * - Tables (horizontal scroll)
+ * - Forms (proper stacking)
+ * - Touch targets (minimum 44x44px)
+ * - Typography (readable sizes)
+ * - Images (responsive)
+ */
+
+/* =========================================
+   TABLE RESPONSIVENESS
+   ========================================= */
+
+/* Wrap all tables in a scrollable container */
+.table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+    margin-bottom: 1rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+/* Table improvements for mobile */
+@media (max-width: 768px) {
+    .table-responsive {
+        border: 1px solid #e9ecef;
+    }
+    
+    .table {
+        min-width: 600px; /* Prevent table from collapsing too much */
+        font-size: 13px;
+    }
+    
+    .table th,
+    .table td {
+        padding: 10px 8px;
+        white-space: nowrap;
+    }
+    
+    .table th {
+        font-size: 12px;
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        background: #f8f9fa;
+        z-index: 10;
+    }
+    
+    /* Sticky first column for better readability */
+    .table-sticky-col th:first-child,
+    .table-sticky-col td:first-child {
+        position: sticky;
+        left: 0;
+        background: white;
+        z-index: 9;
+        box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    }
+    
+    .table-sticky-col th:first-child {
+        z-index: 11;
+        background: #f8f9fa;
+    }
+    
+    /* Scroll indicator */
+    .table-responsive::after {
+        content: '← Scroll to see more →';
+        display: block;
+        text-align: center;
+        font-size: 11px;
+        color: #6c757d;
+        padding: 8px;
+        background: #f8f9fa;
+        border-top: 1px solid #e9ecef;
+    }
+    
+    .table-responsive.scrolled::after {
+        content: '';
+        display: none;
+    }
+}
+
+/* =========================================
+   FORM MOBILE OPTIMIZATION
+   ========================================= */
+
+@media (max-width: 768px) {
+    /* Stack form elements vertically */
+    .form-horizontal .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-horizontal .col-md-4,
+    .form-horizontal .col-md-6,
+    .form-horizontal .col-md-8,
+    .form-horizontal .col-md-10,
+    .form-horizontal .col-md-12,
+    .form-horizontal .control-label {
+        width: 100%;
+        max-width: 100%;
+        float: none;
+        text-align: left;
+        padding-left: 15px;
+        padding-right: 15px;
+    }
+    
+    .form-horizontal .control-label {
+        padding-top: 0;
+        margin-bottom: 8px;
+        font-weight: 600;
+        font-size: 14px;
+    }
+    
+    /* Form inputs */
+    .form-control {
+        width: 100%;
+        font-size: 16px; /* Prevents zoom on iOS */
+        padding: 12px 15px;
+        border-radius: 8px;
+    }
+    
+    /* Form select dropdowns */
+    select.form-control {
+        min-height: 44px;
+        font-size: 16px;
+    }
+    
+    /* Text areas */
+    textarea.form-control {
+        min-height: 120px;
+        font-size: 16px;
+    }
+    
+    /* Radio buttons and checkboxes - bigger touch targets */
+    input[type="radio"],
+    input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        margin-right: 10px;
+    }
+    
+    input[type="radio"] + label,
+    input[type="checkbox"] + label {
+        display: inline-block;
+        padding: 10px;
+        cursor: pointer;
+    }
+    
+    /* File inputs */
+    input[type="file"] {
+        padding: 10px;
+        font-size: 14px;
+    }
+    
+    /* Form buttons */
+    .form-group .btn {
+        width: 100%;
+        margin-bottom: 10px;
+        min-height: 48px;
+        font-size: 16px;
+        font-weight: 600;
+    }
+    
+    /* Inline form groups stack vertically */
+    .form-inline .form-group {
+        display: block;
+        width: 100%;
+        margin-bottom: 15px;
+    }
+    
+    .form-inline .form-control {
+        width: 100%;
+        display: block;
+    }
+    
+    .form-inline .btn {
+        width: 100%;
+        display: block;
+    }
+}
+
+/* =========================================
+   TOUCH TARGET SIZES (Apple HIG: 44x44px min)
+   ========================================= */
+
+@media (max-width: 768px) {
+    /* Buttons */
+    .btn,
+    button,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"] {
+        min-height: 44px;
+        min-width: 44px;
+        padding: 12px 20px;
+        font-size: 16px;
+        border-radius: 8px;
+        touch-action: manipulation; /* Disable double-tap zoom */
+    }
+    
+    .btn-xs,
+    .btn-sm {
+        min-height: 44px;
+        padding: 12px 16px;
+        font-size: 14px;
+    }
+    
+    .btn-lg {
+        min-height: 52px;
+        padding: 16px 24px;
+        font-size: 18px;
+    }
+    
+    /* Links */
+    a {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        padding: 8px 4px;
+    }
+    
+    /* Navigation links */
+    .nav > li > a {
+        min-height: 48px;
+        padding: 14px 20px;
+        font-size: 16px;
+        display: flex;
+        align-items: center;
+    }
+    
+    /* Dropdown menu items */
+    .dropdown-menu > li > a {
+        min-height: 48px;
+        padding: 14px 20px;
+        font-size: 15px;
+    }
+    
+    /* Icons as buttons */
+    .btn i,
+    button i,
+    a i {
+        font-size: 18px;
+    }
+    
+    /* Close buttons */
+    .close {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 12px;
+        font-size: 28px;
+    }
+    
+    /* Pagination */
+    .pagination > li > a,
+    .pagination > li > span {
+        min-height: 44px;
+        min-width: 44px;
+        padding: 12px 16px;
+        font-size: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+}
+
+/* =========================================
+   TYPOGRAPHY - READABLE SIZES
+   ========================================= */
+
+@media (max-width: 768px) {
+    body {
+        font-size: 16px;
+        line-height: 1.6;
+    }
+    
+    h1 {
+        font-size: 28px;
+        line-height: 1.2;
+        margin-bottom: 16px;
+    }
+    
+    h2 {
+        font-size: 24px;
+        line-height: 1.3;
+        margin-bottom: 14px;
+    }
+    
+    h3 {
+        font-size: 20px;
+        line-height: 1.4;
+        margin-bottom: 12px;
+    }
+    
+    h4 {
+        font-size: 18px;
+        line-height: 1.4;
+        margin-bottom: 10px;
+    }
+    
+    h5 {
+        font-size: 16px;
+        line-height: 1.4;
+        margin-bottom: 8px;
+    }
+    
+    h6 {
+        font-size: 14px;
+        line-height: 1.4;
+        margin-bottom: 8px;
+    }
+    
+    p, li, td {
+        font-size: 15px;
+        line-height: 1.6;
+    }
+    
+    small,
+    .small {
+        font-size: 13px;
+    }
+}
+
+/* =========================================
+   IMAGE RESPONSIVENESS
+   ========================================= */
+
+@media (max-width: 768px) {
+    img {
+        max-width: 100%;
+        height: auto;
+        display: block;
+    }
+    
+    .img-responsive {
+        width: 100%;
+        height: auto;
+    }
+    
+    /* Student/profile images */
+    .student-image,
+    .profile-image {
+        max-width: 200px;
+        margin: 0 auto 20px;
+        display: block;
+        border-radius: 12px;
+    }
+}
+
+/* =========================================
+   MODAL MOBILE OPTIMIZATION
+   ========================================= */
+
+@media (max-width: 768px) {
+    .modal-dialog {
+        margin: 10px;
+        width: calc(100% - 20px);
+    }
+    
+    .modal-content {
+        border-radius: 12px;
+    }
+    
+    .modal-header {
+        padding: 20px;
+    }
+    
+    .modal-body {
+        padding: 20px;
+        max-height: calc(100vh - 200px);
+        overflow-y: auto;
+    }
+    
+    .modal-footer {
+        padding: 15px;
+    }
+    
+    .modal-footer .btn {
+        width: 100%;
+        margin: 5px 0;
+    }
+}
+
+/* =========================================
+   PANEL/CARD MOBILE OPTIMIZATION
+   ========================================= */
+
+@media (max-width: 768px) {
+    .panel {
+        margin-bottom: 20px;
+        border-radius: 12px;
+    }
+    
+    .panel-heading {
+        padding: 15px 20px;
+        font-size: 16px;
+    }
+    
+    .panel-body {
+        padding: 20px 15px;
+    }
+    
+    .panel-footer {
+        padding: 12px 20px;
+    }
+}
+
+/* =========================================
+   ALERT MOBILE OPTIMIZATION
+   ========================================= */
+
+@media (max-width: 768px) {
+    .alert {
+        padding: 15px;
+        font-size: 15px;
+        border-radius: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .alert-dismissible .close {
+        padding: 15px;
+    }
+}
+
+/* =========================================
+   BREADCRUMB MOBILE OPTIMIZATION
+   ========================================= */
+
+@media (max-width: 768px) {
+    .breadcrumb {
+        padding: 12px 15px;
+        font-size: 14px;
+        flex-wrap: wrap;
+    }
+    
+    .breadcrumb > li + li:before {
+        padding: 0 8px;
+    }
+}
+
+/* =========================================
+   TAB MOBILE OPTIMIZATION
+   ========================================= */
+
+@media (max-width: 768px) {
+    .nav-tabs {
+        border-bottom: 2px solid #ddd;
+        display: flex;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        flex-wrap: nowrap;
+    }
+    
+    .nav-tabs > li {
+        flex: 0 0 auto;
+    }
+    
+    .nav-tabs > li > a {
+        min-height: 48px;
+        padding: 14px 20px;
+        font-size: 15px;
+        white-space: nowrap;
+    }
+    
+    .tab-content {
+        padding: 20px 15px;
+    }
+}
+
+/* =========================================
+   GRID SYSTEM MOBILE STACKING
+   ========================================= */
+
+@media (max-width: 768px) {
+    .row {
+        margin-left: -10px;
+        margin-right: -10px;
+    }
+    
+    [class*="col-"] {
+        padding-left: 10px;
+        padding-right: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .col-xs-12,
+    .col-sm-12,
+    .col-md-12,
+    .col-lg-12 {
+        width: 100%;
+        float: none;
+    }
+    
+    /* Force all columns to stack on mobile */
+    .col-sm-1, .col-sm-2, .col-sm-3, .col-sm-4,
+    .col-sm-5, .col-sm-6, .col-sm-7, .col-sm-8,
+    .col-sm-9, .col-sm-10, .col-sm-11, .col-sm-12,
+    .col-md-1, .col-md-2, .col-md-3, .col-md-4,
+    .col-md-5, .col-md-6, .col-md-7, .col-md-8,
+    .col-md-9, .col-md-10, .col-md-11, .col-md-12 {
+        width: 100%;
+        float: none;
+    }
+}
+
+/* =========================================
+   UTILITY CLASSES FOR MOBILE
+   ========================================= */
+
+/* Hide on mobile */
+@media (max-width: 768px) {
+    .hidden-mobile,
+    .hidden-xs,
+    .hidden-sm {
+        display: none !important;
+    }
+}
+
+/* Show only on mobile */
+.visible-mobile,
+.visible-xs,
+.visible-sm {
+    display: none !important;
+}
+
+@media (max-width: 768px) {
+    .visible-mobile,
+    .visible-xs {
+        display: block !important;
+    }
+    
+    .visible-mobile-inline {
+        display: inline-block !important;
+    }
+}
+
+/* Mobile text alignment */
+@media (max-width: 768px) {
+    .text-center-mobile {
+        text-align: center !important;
+    }
+    
+    .text-left-mobile {
+        text-align: left !important;
+    }
+    
+    .text-right-mobile {
+        text-align: right !important;
+    }
+}
+
+/* Mobile spacing */
+@media (max-width: 768px) {
+    .mt-mobile-10 { margin-top: 10px !important; }
+    .mt-mobile-20 { margin-top: 20px !important; }
+    .mb-mobile-10 { margin-bottom: 10px !important; }
+    .mb-mobile-20 { margin-bottom: 20px !important; }
+    .p-mobile-10 { padding: 10px !important; }
+    .p-mobile-20 { padding: 20px !important; }
+}
+
+/* =========================================
+   ACCESSIBILITY IMPROVEMENTS
+   ========================================= */
+
+/* Focus states for keyboard navigation */
+@media (max-width: 768px) {
+    *:focus {
+        outline: 3px solid #27ae60;
+        outline-offset: 2px;
+    }
+    
+    button:focus,
+    a:focus,
+    input:focus,
+    select:focus,
+    textarea:focus {
+        outline: 3px solid #27ae60;
+        outline-offset: 2px;
+        box-shadow: 0 0 0 4px rgba(39, 174, 96, 0.2);
+    }
+}
+
+/* =========================================
+   LANDSCAPE MOBILE OPTIMIZATION
+   ========================================= */
+
+@media (max-width: 768px) and (orientation: landscape) {
+    .modal-body {
+        max-height: calc(100vh - 150px);
+    }
+    
+    .main-nav {
+        padding: 10px 15px;
+    }
+    
+    .panel-body {
+        padding: 15px;
+    }
+}
+
+/* =========================================
+   PRINT STYLES
+   ========================================= */
+
+@media print {
+    /* Hide navigation and unnecessary elements */
+    .main-nav,
+    .topbar,
+    .hamburger-menu,
+    .mobile-menu-backdrop,
+    .btn,
+    footer {
+        display: none !important;
+    }
+    
+    /* Optimize content for printing */
+    body {
+        font-size: 12pt;
+        line-height: 1.5;
+        color: #000;
+        background: #fff;
+    }
+    
+    .site-container {
+        max-width: 100%;
+        margin: 0;
+        padding: 0;
+    }
+    
+    .panel {
+        page-break-inside: avoid;
+        box-shadow: none;
+        border: 1px solid #000;
+    }
+    
+    .table {
+        page-break-inside: avoid;
+    }
+    
+    a[href]:after {
+        content: " (" attr(href) ")";
+    }
+}
+
+/* =========================================
+   PERFORMANCE OPTIMIZATIONS
+   ========================================= */
+
+/* GPU acceleration for smooth animations on mobile */
+@media (max-width: 768px) {
+    .btn,
+    .nav-links a,
+    .panel,
+    .modal {
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
+        will-change: transform;
+    }
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

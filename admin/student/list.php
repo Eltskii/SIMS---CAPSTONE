@@ -1,0 +1,465 @@
+<?php
+if (!isset($_SESSION['ACCOUNT_ID'])){
+    redirect(web_root."admin/index.php");
+}
+
+// Ensure the user has appropriate role to access this page
+if ($_SESSION['ACCOUNT_TYPE'] !== 'Registrar' && 
+    $_SESSION['ACCOUNT_TYPE'] !== 'Registrar') {
+    
+    // Redirect or show an error message if the user does not have permission
+    message("You do not have permission to access this page.", "error");
+    redirect("index.php");  // Redirect to a safe page
+}
+
+// Keep logic unchanged: run the exact same SQL/query as original to fetch students
+$mydb->setQuery("SELECT * FROM `tblstudent` s,course c WHERE s.COURSE_ID=c.COURSE_ID AND  NewEnrollees=0");
+$cur = $mydb->loadResultList();
+$studentCount = is_array($cur) ? count($cur) : 0;
+?>
+
+<?php
+// --- Filtering logic: by course and year level (server-side) ---
+// Fetch available courses for the course dropdown
+$mydb->setQuery("SELECT * FROM `course` ORDER BY `COURSE_NAME` ASC");
+$courses = $mydb->loadResultList();
+
+$selected_course = isset($_GET['course']) ? intval($_GET['course']) : 0;
+$selected_year = isset($_GET['year']) ? intval($_GET['year']) : 0;
+
+// Build additional SQL conditions safely
+$conditions = "";
+if ($selected_course > 0) {
+    $conditions .= " AND s.COURSE_ID = " . $selected_course;
+}
+if ($selected_year > 0) {
+    $conditions .= " AND s.YEARLEVEL = " . $selected_year;
+}
+
+// Re-run the student query with filters applied
+$baseSQL = "SELECT * FROM `tblstudent` s, course c WHERE s.COURSE_ID=c.COURSE_ID AND NewEnrollees=0";
+$mydb->setQuery($baseSQL . $conditions);
+$cur = $mydb->loadResultList();
+$studentCount = is_array($cur) ? count($cur) : 0;
+?>
+
+<style>
+/* ===== Consistent Page Styling ===== */
+.page-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.page-header-row .title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  color: #2c3e50;
+}
+
+.student-badge {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 18px;
+  font-weight: 700;
+  margin-left: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.department-seal {
+  max-width: 80px;
+  height: auto;
+  display: block;
+}
+
+/* ===== Modernized Filter Card Styling ===== */
+.card {
+  border-radius: 12px;
+  border: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  margin-bottom: 20px;
+}
+
+.card-body {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px 25px;
+  transition: box-shadow 0.2s ease;
+}
+
+.card-body label {
+  color: #2c3e50;
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.card-body .form-select,
+.card-body .form-control {
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  padding: 8px 12px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  font-size: 14px;
+  width: -webkit-fill-available;
+}
+
+.card-body .form-select:focus,
+.card-body .form-control:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  outline: none;
+}
+
+.card-body .btn {
+  border-radius: 8px;
+  font-weight: 600;
+  border: none;
+  padding: 8px 16px;
+  transition: all 0.2s ease;
+  color: white;
+}
+
+.card-body .btn-success {
+  background: linear-gradient(135deg, #27ae60, #219653);
+}
+
+.card-body .btn-secondary {
+  background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+}
+
+.card-body .btn-success:hover {
+  background: linear-gradient(135deg, #219653, #1e8449);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.card-body .btn-secondary:hover {
+  background: linear-gradient(135deg, #7f8c8d, #6c757d);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+/* Table Styling - Updated to match theme */
+.table-responsive {
+  margin-top: 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  border: none;
+}
+
+.table {
+  margin-bottom: 0;
+  border: none;
+  font-size: 14px;
+}
+
+.table th {
+  background: linear-gradient(135deg, #2c3e50, #34495e);
+  color: #fff;
+  text-align: center;
+  font-weight: 600;
+  border: none;
+  padding: 16px 12px;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+}
+
+.table td {
+  vertical-align: middle;
+  padding: 14px 12px;
+  text-align: center;
+  border-bottom: 1px solid #e9ecef;
+  color: #495057;
+}
+
+.table-hover tbody tr:hover {
+  background-color: #f8f9fa;
+  transition: background-color 0.2s ease;
+}
+
+/* Action Buttons Styling */
+.action-btn {
+  margin-right: 6px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 6px 12px;
+  transition: all 0.2s ease;
+  color: white;
+}
+
+.action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+  color: white;
+}
+
+.btn-info {
+  background: linear-gradient(135deg, #1abc9c, #16a085);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #3498db, #2980b9);
+}
+
+.btn-info:hover {
+  background: linear-gradient(135deg, #16a085, #138d75);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #2980b9, #2471a3);
+}
+
+/* DataTable Customization */
+.dataTables_wrapper {
+  margin-top: 0;
+}
+
+.dataTables_length,
+.dataTables_filter {
+  margin-bottom: 15px;
+}
+
+.dataTables_filter input {
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 6px 12px;
+  margin-left: 8px;
+}
+
+.dataTables_length select {
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 6px;
+  margin: 0 8px;
+}
+
+.dataTables_info {
+  color: #6c757d;
+  font-size: 13px;
+}
+
+.dataTables_paginate .paginate_button {
+  border: 1px solid #e9ecef !important;
+  border-radius: 6px !important;
+  margin: 0 2px;
+  padding: 6px 12px !important;
+}
+
+.dataTables_paginate .paginate_button.current {
+  background: linear-gradient(135deg, #667eea, #764ba2) !important;
+  color: white !important;
+  border: none !important;
+}
+
+/* Responsive styling */
+@media (max-width: 767px) {
+  .page-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .department-seal {
+    margin-top: 10px;
+  }
+  .table-responsive {
+    border-radius: 8px;
+  }
+  .action-btn {
+    display: block;
+    width: 100%;
+    margin-bottom: 5px;
+  }
+  .card-body .btn {
+    width: 100%;
+    margin-bottom: 8px;
+  }
+}
+
+/* Text colors for better readability */
+.text-muted {
+  color: #6c757d !important;
+}
+
+/* Course badges */
+.course-badge {
+  background: linear-gradient(135deg, #f39c12, #e67e22);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+/* Gender badges */
+.gender-badge-male {
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.gender-badge-female {
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+</style>
+
+<div class="row">
+  <div class="col-lg-12">
+    <div class="page-header-row">
+      <div>
+        <h2 class="title">
+          List of Students
+          <span class="student-badge"><?php echo intval($studentCount); ?></span>
+        </h2>
+        <p class="text-muted" style="margin:0;">Manage all student records of the university.</p>
+      </div>
+      <div style="text-align:right;">
+        <img src="<?php echo web_root; ?>img/school_seal_100x100.png" alt="School Seal" class="department-seal" loading="lazy">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ Filter Section (Modern card-body style for consistency) -->
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" action="<?php echo $_SERVER['PHP_SELF']; ?>" class="row g-3 align-items-end" role="search" aria-label="Student filters">
+
+      <div class="col-md-5 col-lg-4">
+        <label for="course" class="form-label">Course</label>
+        <select name="course" id="course" class="form-select">
+          <option value="0">All Courses</option>
+          <?php foreach ($courses as $c): 
+              $sel = ($selected_course == $c->COURSE_ID) ? 'selected' : ''; ?>
+              <option value="<?php echo htmlspecialchars($c->COURSE_ID); ?>" <?php echo $sel; ?>>
+                <?php echo htmlspecialchars($c->COURSE_NAME); ?>
+              </option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+
+      <div class="col-md-4 col-lg-3">
+        <label for="year" class="form-label">Year Level</label>
+        <select name="year" id="year" class="form-select">
+          <option value="0">All Years</option>
+          <?php for ($y = 1; $y <= 4; $y++): 
+              $sel = ($selected_year == $y) ? 'selected' : ''; ?>
+              <option value="<?php echo $y; ?>" <?php echo $sel; ?>>Year <?php echo $y; ?></option>
+          <?php endfor; ?>
+        </select>
+      </div>
+
+      <div class="col-12 mt-2">
+        <button type="submit" class="btn btn-success btn-sm me-2">
+          <i class="fa fa-filter"></i> Filter
+        </button>
+        <a href="<?php echo $_SERVER['PHP_SELF']; ?>" class="btn btn-secondary btn-sm">
+          <i class="fa fa-refresh"></i> Reset
+        </a>
+      </div>
+
+    </form>
+  </div>
+</div>
+
+<form action="controller.php?action=delete" Method="POST">
+  <div class="table-responsive">
+    <table id="dash-table" class="table table-striped table-bordered table-hover" cellspacing="0" width="100%">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Sex</th>
+          <th>Age</th>
+          <th>Address</th>
+          <th>Contact No.</th>
+          <th>Course</th>
+          <th width="14%">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php
+          // Original loop logic retained exactly (no logic changes)
+          foreach ($cur as $result) {
+            
+            if($result->BDAY!='0000-00-00'){
+              $age = date_diff(date_create($result->BDAY),date_create('today'))->y;
+            }else{
+              $age='None';
+            }
+
+            $genderClass = ($result->SEX == 'Male') ? 'gender-badge-male' : 'gender-badge-female';
+            
+          echo '<tr>';
+          echo '<td><strong>' . $result->IDNO . '</strong></td>';
+          echo '<td><strong>' . $result->LNAME . ', ' . $result->FNAME . ' ' . $result->MNAME . '</strong></td>';
+          echo '<td><span class="' . $genderClass . '">' . $result->SEX . '</span></td>';
+          echo '<td>' . $age . '</td>';
+          echo '<td>' . $result->HOME_ADD . '</td>';
+          echo '<td>' . $result->CONTACT_NO . '</td>';
+          echo '<td><span class="course-badge">' . $result->COURSE_NAME . ' - Year ' . $result->COURSE_LEVEL . '</span></td>';
+           
+          echo '<td align="center"> 
+                  <a title="View Information" href="index.php?view=view&id='.$result->IDNO.'" class="btn btn-info btn-xs action-btn">View <span class="fa fa-info-circle fw-fa"></span></a>
+                  <a title="View Grades" href="index.php?view=grades&id='.$result->IDNO.'" class="btn btn-primary btn-xs action-btn">Grades <span class="fa fa-info-circle fw-fa"></span></a>
+                </td>';
+          echo '</tr>';
+          }
+        ?>
+      </tbody>
+    </table>
+  </div>
+</form>
+
+<!-- DataTables init with consistent styling -->
+<script>
+  (function($) {
+    $(document).ready(function() {
+      if ($.fn.DataTable) {
+        $('#dash-table').DataTable({
+          responsive: true,
+          pageLength: 15,
+          lengthMenu: [[10, 15, 25, 50], [10, 15, 25, 50]],
+          columnDefs: [{ orderable: false, targets: -1 }],
+          order: [[1, 'asc']],
+          language: {
+            searchPlaceholder: "Search students...",
+            search: "",
+            lengthMenu: "Show _MENU_ entries",
+            info: "Showing _START_ to _END_ of _TOTAL_ entries",
+            infoEmpty: "Showing 0 to 0 of 0 entries",
+            infoFiltered: "(filtered from _MAX_ total entries)",
+            paginate: {
+              first: "First",
+              last: "Last",
+              next: "Next",
+              previous: "Previous"
+            }
+          },
+          dom: '<"row"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>' +
+               '<"row"<"col-sm-12"tr>>' +
+               '<"row"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
+          initComplete: function() {
+            // Add custom styling after DataTable initialization
+            $('.dataTables_length select').addClass('form-control-sm');
+            $('.dataTables_filter input').addClass('form-control-sm');
+          }
+        });
+      }
+    });
+  })(jQuery);
+</script>

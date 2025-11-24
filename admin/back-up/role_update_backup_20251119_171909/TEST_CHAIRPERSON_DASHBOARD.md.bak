@@ -1,0 +1,323 @@
+# Test Guide: Chairperson Dashboard
+
+## Quick Test Setup
+
+### **Test Account**
+- **Username**: `test_chair`
+- **Password**: _(Check with system admin or use existing password)_
+- **Role**: Chairperson
+- **Department**: CAT (College of Applied Technology)
+- **Department ID**: 34
+
+### **Expected Data for CAT Department**
+Based on current database state:
+- ✅ **8 Courses**
+- ✅ **60 Subjects**
+- ✅ **9 Students** (enrolled in CAT courses)
+- ✅ **1 New Enrollment** (pending)
+- ✅ **1 Department** (CAT itself)
+- ❓ **Instructors** (need to check `tblinstructor` table)
+
+---
+
+## 🧪 Test Steps
+
+### **1. Login as Chairperson**
+```
+URL: http://localhost/SIMS/admin/index.php
+Username: test_chair
+Password: [existing password]
+```
+
+**Expected Result:**
+- ✅ Successfully logs in
+- ✅ Redirected to dashboard at `http://localhost/SIMS/admin/index.php?page=1`
+
+---
+
+### **2. Verify Dashboard Header**
+
+**Check for:**
+1. ✅ **Title**: "Welcome to the Chairperson Panel"
+2. ✅ **Dashboard Badge**: Teal gradient badge with "Dashboard" text
+3. ✅ **Department Badge**: Orange gradient badge with:
+   - Icon: 🏢 (building icon)
+   - Text: "CAT" or "College of Applied Technology"
+4. ✅ **Subtitle**: "Manage your department efficiently"
+
+**Screenshot Location:** Header section at top of page
+
+---
+
+### **3. Verify Statistics Cards**
+
+**Expected Values:**
+
+| Stat Card | Expected Value | Label | Card Color |
+|-----------|---------------|-------|------------|
+| Students | **9** | "Dept. Students" | Purple gradient |
+| Subjects | **60** | "Subjects" | Green gradient |
+| Courses | **8** | "Courses" | Yellow gradient |
+| Instructors | **?** _(check)_ | "Instructors" | Blue gradient |
+| Department | **1** | "Department" | Gray gradient |
+| Enrollments | **1** | "Enrollments" | Red gradient |
+
+**What to Check:**
+- ✅ Numbers match expected values above
+- ✅ Labels show department-specific text (e.g., "Dept. Students", not just "Students")
+- ✅ "Department" is singular, shows "1"
+- ✅ All cards have hover effect (slight lift)
+
+---
+
+### **4. Verify Manage Links (Access Control)**
+
+Click each "Manage" link at the bottom of stat cards:
+
+| Link | Expected Behavior | Status |
+|------|------------------|--------|
+| **Manage Students** | ❌ Grayed out, disabled, no click | RESTRICTED |
+| **Manage Subjects** | ✅ Enabled, clickable, opens subject list | ALLOWED |
+| **Manage Courses** | ✅ Enabled, clickable, opens course list | ALLOWED |
+| **Manage Instructors** | ✅ Enabled, clickable, opens instructor list | ALLOWED |
+| **View Department** | ✅ Enabled, clickable, shows department details | ALLOWED |
+| **Enrollment Reports** | ❌ Grayed out, disabled, no click | RESTRICTED |
+
+**If "Manage Subjects" is clicked:**
+- ✅ Should show **only 60 subjects** (CAT department subjects)
+- ❌ Should NOT show subjects from other departments
+
+**If "Manage Courses" is clicked:**
+- ✅ Should show **only 8 courses** (CAT department courses)
+- ❌ Should NOT show courses from other departments
+
+---
+
+### **5. Verify Quick Actions Section**
+
+**Check buttons in the "🚀 Quick Actions:" section:**
+
+| Button | Icon | Expected Behavior |
+|--------|------|------------------|
+| **New Subject** | 📘 | ✅ Enabled, blue button, clickable |
+| **New Course** | 🎓 | ✅ Enabled, orange button, clickable |
+| **New Schedule** | 📅 | ✅ Enabled, teal button, clickable |
+| **New User** | 👤 | ❌ Grayed out or disabled (Admin only) |
+
+**What to Check:**
+- ✅ First 3 buttons are fully functional
+- ❌ "New User" button is disabled or shows access denied message
+
+---
+
+### **6. Verify Role-Based Documentation**
+
+**Scroll down to "Role-Based System Guide" section:**
+
+**Should Show Sections:**
+1. ✅ **📚 Academic Resources** (collapsed)
+   - Course and subject management
+   - Departmental academic planning
+   - Text: "Department-specific faculty management"
+2. ✅ **👨‍🏫 Faculty Management** (collapsed)
+   - Instructor record management
+   - Course assignment coordination
+
+**Should NOT Show Sections:**
+- ❌ "👥 Student Management" (Admin/Registrar only)
+- ❌ "📅 Scheduling & Enrollment" (Admin/Registrar only)
+- ❌ "⚙️ System Administration" (Admin only)
+
+---
+
+### **7. Verify Quick Start Guide**
+
+**Right sidebar should show:**
+- ✅ **Title**: "Quick Start Guide"
+- ✅ **Badge**: Orange "CHAIRPERSON" role badge
+- ✅ **Numbered Steps**:
+  1. "Department Courses: Manage courses within your department"
+  2. "Subject Planning: Develop and assign department subjects"
+  3. "Faculty Coordination: Manage department instructors"
+  4. "Department Reports: Generate department-specific analytics"
+
+**Should NOT show:**
+- ❌ Steps for "Set Semester" (Admin only)
+- ❌ Steps for "User Management" (Admin only)
+- ❌ Steps for "System Backup" (Admin only)
+
+---
+
+## 🔍 Data Isolation Test
+
+### **Critical Security Check**
+
+1. **As Chairperson (test_chair), navigate to:**
+   - `http://localhost/SIMS/admin/course/index.php`
+
+2. **Expected Result:**
+   - ✅ Shows **ONLY 8 courses** from CAT department
+   - ❌ Does NOT show courses from:
+     - CET (Computer Engineering Technology)
+     - Other departments
+
+3. **Check Course Names:**
+   - Should see courses like:
+     - BSHM (Hotel Management) - if in CAT
+     - BSIT (Information Technology) - if in CAT
+     - _etc., depending on CAT's courses_
+
+4. **Try to access another department's course:**
+   - Manually navigate to a course ID from another department
+   - Expected: Access denied or redirected
+
+---
+
+## 🐛 Common Issues & Solutions
+
+### **Issue 1: Department Badge Not Showing**
+**Symptoms:**
+- No orange "CAT" badge appears below title
+
+**Debug Steps:**
+1. Check if `DEPT_ID` is set:
+   - Add `<?php var_dump($_SESSION['DEPT_ID']); ?>` temporarily to home.php
+2. Verify `getCurrentDepartmentName()` works:
+   - Add `<?php echo getCurrentDepartmentName(); ?>` temporarily
+3. Check database:
+   ```sql
+   SELECT DEPT_ID FROM useraccounts WHERE ACCOUNT_USERNAME = 'test_chair';
+   ```
+   Should return: **34**
+
+**Expected Output:**
+- `$_SESSION['DEPT_ID']` should be `34`
+- `getCurrentDepartmentName()` should return `"CAT"` or `"College of Applied Technology"`
+
+---
+
+### **Issue 2: Seeing Wrong Numbers**
+**Symptoms:**
+- Student count shows all 57 students instead of 9
+- Course count shows all courses instead of 8
+
+**Root Cause:**
+- Department filtering not applied in SQL queries
+
+**Debug Steps:**
+1. Check `$isChairperson` variable:
+   ```php
+   var_dump(isChairperson()); // Should be bool(true)
+   ```
+2. Check `$departmentFilter` variable:
+   ```php
+   echo $departmentFilter; // Should output: " AND c.DEPT_ID = 34"
+   ```
+3. Verify SQL query includes the filter:
+   - Look for `$departmentFilter` in the query string
+
+---
+
+### **Issue 3: All Links Are Enabled**
+**Symptoms:**
+- "Manage Students" link is clickable (should be disabled)
+- "New User" button is enabled (should be disabled)
+
+**Root Cause:**
+- Access control checks failing
+
+**Debug Steps:**
+1. Check session variable:
+   ```php
+   var_dump($_SESSION['ACCOUNT_TYPE']); // Should be "Chairperson"
+   ```
+2. Verify it's exactly "Chairperson" (case-sensitive)
+3. Check JavaScript console for errors in `checkAccess()` function
+
+---
+
+## ✅ Success Criteria
+
+The test is **PASSED** if:
+
+1. ✅ Department badge shows "CAT" correctly
+2. ✅ All statistics show department-specific counts:
+   - 9 students, 60 subjects, 8 courses, 1 department, 1 enrollment
+3. ✅ "Manage Students" link is disabled
+4. ✅ "Manage Subjects/Courses/Instructors" links are enabled
+5. ✅ "New User" button is disabled
+6. ✅ Course list shows ONLY 8 CAT courses (not all university courses)
+7. ✅ Subject list shows ONLY 60 CAT subjects
+8. ✅ No access to other departments' data
+
+---
+
+## 📊 Comparison Test
+
+To verify filtering is working, **also login as Administrator** and compare:
+
+### **Administrator Dashboard**
+- Shows: **57 total students** (all departments)
+- Shows: **All courses** (from all departments)
+- Shows: **Multiple departments** count
+
+### **Chairperson (test_chair) Dashboard**
+- Shows: **9 students** (CAT department only)
+- Shows: **8 courses** (CAT department only)
+- Shows: **1 department** (CAT only)
+
+**If both show the same numbers, filtering is NOT working correctly!**
+
+---
+
+## 🎯 Next Steps After Testing
+
+If all tests pass:
+
+1. ✅ **Assign other Chairpersons to departments**
+   - Update `chair`, `chair2`, `chair3` accounts with their respective `DEPT_ID`
+   - Test with different departments (CET, etc.)
+
+2. ✅ **Apply filtering to other modules**
+   - Course module list view
+   - Subject module list view
+   - Instructor module list view
+   - Report generation
+
+3. ✅ **Create documentation**
+   - Update user manual for Chairpersons
+   - Add screenshots of department-specific views
+   - Document access restrictions
+
+---
+
+## 📝 Test Report Template
+
+```
+Test Date: _______________
+Tester: _______________
+
+✅ / ❌  Department badge displays correctly
+✅ / ❌  Statistics show department-specific counts
+✅ / ❌  Access control works (disabled links grayed out)
+✅ / ❌  Course list shows only CAT courses (8 total)
+✅ / ❌  Subject list shows only CAT subjects (60 total)
+✅ / ❌  No cross-department data visible
+✅ / ❌  Quick actions appropriate for role
+
+Overall Status: PASS / FAIL
+
+Notes:
+_______________________________________________________
+_______________________________________________________
+_______________________________________________________
+```
+
+---
+
+## 🔗 Related Files
+
+- **Dashboard**: `/admin/home.php`
+- **Department Filter**: `/include/department-filter.php`
+- **Documentation**: `/CHAIRPERSON_DASHBOARD.md`
+- **Database Migration**: `/database_migrations/002_phase1_admin_improvements.sql`
