@@ -1,4 +1,4 @@
-# Student Information Management System (SIMS)
+# BSU-Bokod Student Information Management System (BSUB-SIMS)
 
 ## Live Demo
 
